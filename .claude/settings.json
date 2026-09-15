@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "agent",
+            "if": "Bash(git push*)",
+            "prompt": "You are a pre-push security gate for a Go REST API interview-prep project (not production). Hook input JSON: $ARGUMENTS\n\nRead the checklist at C:\\Users\\user\\.claude\\skills\\security-review-checklist\\SKILL.md and follow its instructions.\n\nScope: review only what this push actually sends to the remote. Determine the upstream with `git rev-parse --abbrev-ref --symbolic-full-name @{u}` in the repo the push command is running in; if it resolves, review `git diff @{u}..HEAD`; if there is no upstream (first push of a new branch), review `git diff HEAD~1..HEAD` (or the full diff against an empty tree if there is only one commit). Apply the scope-detection rules in the checklist (skip LLM/agent sections, skip API sections if no route/handler surface exists) and walk the remaining checklist.\n\nOutput ONLY this JSON and nothing else:\n- If you find any Critical or High severity finding: {\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"<one line per Critical/High finding with file:line>\"}}\n- Otherwise: {\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"allow\", \"permissionDecisionReason\": \"security-review-checklist: no Critical/High findings\"}}",
+            "model": "claude-sonnet-5",
+            "timeout": 120,
+            "statusMessage": "Running security-review-checklist before push..."
+          },
+          { "type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/pre-push-check.sh\"" }
+        ]
+      }
+    ]
+  }
+}
