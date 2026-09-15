@@ -3,6 +3,10 @@
 Read `STANDARDS.md` before designing any solution and use its "Default for
 this repo" choices unless the assignment gives a specific reason to deviate.
 
+Pushes are automatically gated by `.claude/settings.json` hooks: the
+`security-review-checklist` skill runs as a review gate, and
+`.claude/hooks/pre-push-check.sh` blocks on `gofmt` and `go test` failures.
+
 ## TDD Discipline
 
 - Workflow is **Red → Green → Refactor**. Write a failing test before any
@@ -14,6 +18,7 @@ this repo" choices unless the assignment gives a specific reason to deviate.
   at the end. This is what shows an interviewer your actual process, not
   just your final answer.
 - Refactor only on green. Never refactor and add behavior in the same step.
+- `go test ./...` must pass before every commit, not just before Refactor is "done."
 
 ## Code Quality Standards
 

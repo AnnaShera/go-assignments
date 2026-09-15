@@ -28,4 +28,13 @@ if [ -n "$unformatted" ]; then
   exit 2
 fi
 
+test_output=$(go test ./... 2>&1)
+test_status=$?
+
+if [ $test_status -ne 0 ]; then
+  echo "Push blocked, go test failed:" >&2
+  echo "$test_output" >&2
+  exit 2
+fi
+
 exit 0

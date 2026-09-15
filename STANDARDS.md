@@ -135,6 +135,32 @@ Don't build a validation abstraction for a single check.
 
 ---
 
+## Authentication & Authorization
+
+**Default for this repo:** no auth implemented (out of scope for CRUD practice), but
+document the decision explicitly in `docs/DECISIONS.md`: where JWT middleware would
+sit (before the handler, via `net/http` middleware chaining), and which endpoints
+would need role checks (e.g. DELETE on Project). An interviewer will ask "how would
+you secure this" — having the answer ready is the point, not building it.
+
+---
+
+## HTTP Error Response Contract
+
+All handler errors return a consistent JSON envelope:
+```go
+{"error": "human-readable message", "code": "not_found"}
+```
+Map custom error types (from Error Handling above) to status codes at the handler
+boundary: not-found → 404, validation → 400, internal → 500 (message generic,
+details logged via slog, never leaked to the client).
+
+**Default for this repo:** one `writeError(w, err)` helper in the handlers package
+doing this mapping, so every endpoint stays consistent without repeating switch
+statements.
+
+---
+
 ## Database Access
 
 *(Not in the original Python doc, added because Postgres is a confirmed dependency.)*
