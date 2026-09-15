@@ -1,0 +1,7 @@
+.env
+
+# Go build artifacts
+/bin/
+*.exe
+*.test
+*.out
