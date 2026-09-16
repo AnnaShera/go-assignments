@@ -20,7 +20,7 @@ type Finding struct {
 // Validate checks that a finding has required fields and valid values.
 func (f Finding) Validate() error {
 	if f.ScanID == 0 {
-		return errors.New("scan ID is required")
+		return ErrScanIDRequired
 	}
 	if f.Title == "" {
 		return errors.New("title is required")
@@ -48,7 +48,7 @@ func (f Finding) Validate() error {
 
 func isValidSeverity(s string) bool {
 	switch s {
-	case "low", "medium", "high", "critical":
+	case SeverityLow, SeverityMedium, SeverityHigh, SeverityCritical:
 		return true
 	}
 	return false
@@ -56,7 +56,7 @@ func isValidSeverity(s string) bool {
 
 func isValidStatus(s string) bool {
 	switch s {
-	case "open", "confirmed", "false_positive", "resolved":
+	case StatusOpen, StatusConfirmed, StatusFalsePositive, StatusResolved:
 		return true
 	}
 	return false

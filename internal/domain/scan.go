@@ -16,7 +16,7 @@ type Scan struct {
 // Validate checks that a scan has required fields.
 func (s Scan) Validate() error {
 	if s.ProjectID == 0 {
-		return errors.New("project ID is required")
+		return ErrProjectIDRequired
 	}
 	if s.Tool == "" {
 		return errors.New("tool is required")
