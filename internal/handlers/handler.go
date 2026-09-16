@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 	"github.com/AnnaShera/vuln-findings-api/internal/repository"
@@ -110,6 +111,80 @@ func NewHandler(repo Repository, log *slog.Logger) *Handler {
 	return &Handler{repo: repo, log: log}
 }
 
+// writeJSON writes status and body as the response, setting the JSON
+// content type. Encode failures are logged rather than ignored (the
+// header and status are already sent, so there's nothing left to do for
+// the caller) but never panic or leak into the response.
+func (h *Handler) writeJSON(w http.ResponseWriter, status int, body envelope) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		h.log.Error("encode response failed", "error", err)
+	}
+}
+
+// writeData writes a success envelope wrapping data at the given status.
+func (h *Handler) writeData(w http.ResponseWriter, status int, data any) {
+	h.writeJSON(w, status, envelope{Data: data})
+}
+
+// writeError maps err to a status/code/message via mapError, logs it at a
+// level matching severity (server errors at Error, client errors at
+// Warn), and writes the error envelope. This is the single call site
+// STANDARDS.md's "HTTP Error Response Contract" asks for, so every
+// endpoint maps errors identically.
+func (h *Handler) writeError(w http.ResponseWriter, err error) {
+	status, code, message := mapError(err)
+	if status == http.StatusInternalServerError {
+		h.log.Error("request failed", "error", err)
+	} else {
+		h.log.Warn("request failed", "error", err, "code", code)
+	}
+	h.writeJSON(w, status, envelope{Error: &errorBody{Message: message, Code: code}})
+}
+
+// parseID parses a path parameter as a project/scan/finding ID, returning
+// errInvalidID (mapped to 400 invalid_input) rather than the raw
+// strconv error, which would leak parser internals to the client.
+func parseID(raw string) (int64, error) {
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		return 0, errInvalidID
+	}
+	return id, nil
+}
+
+// statusRecorder wraps http.ResponseWriter to capture the status code
+// written, so withLogging can report it after the handler returns control.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+// WriteHeader records status before delegating, so a handler that never
+// calls WriteHeader explicitly (relying on the implicit 200) still gets
+// logged correctly via the http.ResponseWriter zero-value default.
+func (rec *statusRecorder) WriteHeader(status int) {
+	rec.status = status
+	rec.ResponseWriter.WriteHeader(status)
+}
+
+// withLogging wraps next to log method, path, status, and latency at info
+// level once the request completes, per STANDARDS.md's logging default.
+func (h *Handler) withLogging(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next(rec, r)
+		h.log.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"latency", time.Since(start),
+		)
+	}
+}
+
 // createProjectRequest is the JSON body accepted by CreateProject.
 type createProjectRequest struct {
 	Name string `json:"name"`
@@ -119,125 +194,55 @@ type createProjectRequest struct {
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	projects, err := h.repo.ListProjects(r.Context())
 	if err != nil {
-		status, code, message := mapError(err)
-		h.log.Error("list projects failed", "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(envelope{Data: projects}); err != nil {
-		h.log.Error("encode response failed", "error", err)
-	}
+	h.writeData(w, http.StatusOK, projects)
 }
 
 // GetProject handles GET /projects/{id}.
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r.PathValue("id"))
 	if err != nil {
-		status, code, message := mapError(errInvalidID)
-		h.log.Warn("get project failed", "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
 
 	project, err := h.repo.GetProjectByID(r.Context(), id)
 	if err != nil {
-		status, code, message := mapError(err)
-		if status == http.StatusInternalServerError {
-			h.log.Error("get project failed", "error", err)
-		} else {
-			h.log.Warn("get project failed", "error", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(envelope{Data: project}); err != nil {
-		h.log.Error("encode response failed", "error", err)
-	}
+	h.writeData(w, http.StatusOK, project)
 }
 
 // CreateProject handles POST /projects.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var req createProjectRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		status, code, message := mapError(errInvalidBody)
-		h.log.Warn("create project failed", "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, errInvalidBody)
 		return
 	}
 
 	project, err := h.repo.CreateProject(r.Context(), req.Name)
 	if err != nil {
-		status, code, message := mapError(err)
-		if status == http.StatusInternalServerError {
-			h.log.Error("create project failed", "error", err)
-		} else {
-			h.log.Warn("create project failed", "error", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	if err := json.NewEncoder(w).Encode(envelope{Data: project}); err != nil {
-		h.log.Error("encode response failed", "error", err)
-	}
+	h.writeData(w, http.StatusCreated, project)
 }
 
 // DeleteProject handles DELETE /projects/{id}.
 func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	id, err := parseID(r.PathValue("id"))
 	if err != nil {
-		status, code, message := mapError(errInvalidID)
-		h.log.Warn("delete project failed", "error", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
 
 	if err := h.repo.DeleteProject(r.Context(), id); err != nil {
-		status, code, message := mapError(err)
-		if status == http.StatusInternalServerError {
-			h.log.Error("delete project failed", "error", err)
-		} else {
-			h.log.Warn("delete project failed", "error", err)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(status)
-		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
-			h.log.Error("encode error response failed", "error", encErr)
-		}
+		h.writeError(w, err)
 		return
 	}
-
 	w.WriteHeader(http.StatusNoContent)
 }
