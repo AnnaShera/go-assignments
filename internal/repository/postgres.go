@@ -81,9 +81,17 @@ func (r *pgRepository) CreateProject(ctx context.Context, name string) (domain.P
 
 // DeleteProject removes a project by ID.
 func (r *pgRepository) DeleteProject(ctx context.Context, id int64) error {
-	result, err := r.db.ExecContext(ctx, "DELETE FROM projects WHERE id = $1", id)
+	return r.deleteByID(ctx, "DELETE FROM projects WHERE id = $1", "delete project", id)
+}
+
+// deleteByID runs a single-row delete statement and maps "no rows affected"
+// to ErrNotFound. query must be a static, fully-formed statement with the ID
+// as its only placeholder ($1); opLabel names the operation for error
+// wrapping (e.g. "delete project").
+func (r *pgRepository) deleteByID(ctx context.Context, query, opLabel string, id int64) error {
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
-		return fmt.Errorf("delete project: %w", err)
+		return fmt.Errorf("%s: %w", opLabel, err)
 	}
 
 	rows, err := result.RowsAffected()
@@ -166,21 +174,7 @@ func (r *pgRepository) CreateScan(ctx context.Context, projectID int64, tool str
 // DeleteScan removes a scan by ID. Findings under it are removed by the
 // database via ON DELETE CASCADE.
 func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
-	result, err := r.db.ExecContext(ctx, "DELETE FROM scans WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("delete scan: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return domain.ErrNotFound
-	}
-
-	return nil
+	return r.deleteByID(ctx, "DELETE FROM scans WHERE id = $1", "delete scan", id)
 }
 
 // ListFindingsByScan returns all findings for a scan.
@@ -273,21 +267,7 @@ func (r *pgRepository) UpdateFindingStatus(ctx context.Context, id int64, status
 
 // DeleteFinding removes a finding by ID.
 func (r *pgRepository) DeleteFinding(ctx context.Context, id int64) error {
-	result, err := r.db.ExecContext(ctx, "DELETE FROM findings WHERE id = $1", id)
-	if err != nil {
-		return fmt.Errorf("delete finding: %w", err)
-	}
-
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("rows affected: %w", err)
-	}
-
-	if rows == 0 {
-		return domain.ErrNotFound
-	}
-
-	return nil
+	return r.deleteByID(ctx, "DELETE FROM findings WHERE id = $1", "delete finding", id)
 }
 
 // Close closes the database connection.
