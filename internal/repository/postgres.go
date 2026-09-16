@@ -3,7 +3,10 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 )
@@ -26,7 +29,7 @@ func (r *pgRepository) ListProjects(ctx context.Context) ([]domain.Project, erro
 	}
 	defer rows.Close()
 
-	var projects []domain.Project
+	projects := []domain.Project{}
 	for rows.Next() {
 		var p domain.Project
 		if err := rows.Scan(&p.ID, &p.Name, &p.CreatedAt); err != nil {
@@ -48,7 +51,7 @@ func (r *pgRepository) GetProjectByID(ctx context.Context, id int64) (domain.Pro
 	err := r.db.QueryRowContext(ctx, "SELECT id, name, created_at FROM projects WHERE id = $1", id).
 		Scan(&p.ID, &p.Name, &p.CreatedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Project{}, domain.ErrNotFound
 	}
 	if err != nil {
@@ -105,7 +108,7 @@ func (r *pgRepository) ListScansByProject(ctx context.Context, projectID int64) 
 	}
 	defer rows.Close()
 
-	var scans []domain.Scan
+	scans := []domain.Scan{}
 	for rows.Next() {
 		var s domain.Scan
 		if err := rows.Scan(&s.ID, &s.ProjectID, &s.Tool, &s.StartedAt); err != nil {
@@ -128,7 +131,7 @@ func (r *pgRepository) GetScanByID(ctx context.Context, id int64) (domain.Scan, 
 		"SELECT id, project_id, tool, started_at FROM scans WHERE id = $1",
 		id).Scan(&s.ID, &s.ProjectID, &s.Tool, &s.StartedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Scan{}, domain.ErrNotFound
 	}
 	if err != nil {
@@ -150,6 +153,10 @@ func (r *pgRepository) CreateScan(ctx context.Context, projectID int64, tool str
 		projectID, tool).Scan(&s.ID, &s.StartedAt)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return domain.Scan{}, fmt.Errorf("project %d: %w", projectID, domain.ErrNotFound)
+		}
 		return domain.Scan{}, fmt.Errorf("create scan: %w", err)
 	}
 
@@ -166,7 +173,7 @@ func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64) ([]
 	}
 	defer rows.Close()
 
-	var findings []domain.Finding
+	findings := []domain.Finding{}
 	for rows.Next() {
 		var f domain.Finding
 		if err := rows.Scan(&f.ID, &f.ScanID, &f.Title, &f.Severity, &f.Status, &f.FilePath, &f.LineNumber, &f.CreatedAt); err != nil {
@@ -189,7 +196,7 @@ func (r *pgRepository) GetFindingByID(ctx context.Context, id int64) (domain.Fin
 		"SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE id = $1",
 		id).Scan(&f.ID, &f.ScanID, &f.Title, &f.Severity, &f.Status, &f.FilePath, &f.LineNumber, &f.CreatedAt)
 
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return domain.Finding{}, domain.ErrNotFound
 	}
 	if err != nil {
@@ -211,6 +218,10 @@ func (r *pgRepository) CreateFinding(ctx context.Context, finding domain.Finding
 		Scan(&finding.ID, &finding.CreatedAt)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return domain.Finding{}, fmt.Errorf("scan %d: %w", finding.ScanID, domain.ErrNotFound)
+		}
 		return domain.Finding{}, fmt.Errorf("create finding: %w", err)
 	}
 
@@ -219,6 +230,10 @@ func (r *pgRepository) CreateFinding(ctx context.Context, finding domain.Finding
 
 // UpdateFindingStatus updates a finding's status.
 func (r *pgRepository) UpdateFindingStatus(ctx context.Context, id int64, status string) error {
+	if !domain.IsValidStatus(status) {
+		return domain.ErrInvalidStatus
+	}
+
 	result, err := r.db.ExecContext(ctx, "UPDATE findings SET status = $1 WHERE id = $2", status, id)
 	if err != nil {
 		return fmt.Errorf("update finding: %w", err)

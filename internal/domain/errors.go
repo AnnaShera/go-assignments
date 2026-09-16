@@ -10,6 +10,10 @@ var (
 	ErrNotFound            = errors.New("not found")
 	ErrInvalidSeverity     = errors.New("invalid severity")
 	ErrInvalidStatus       = errors.New("invalid status")
+	ErrToolRequired        = errors.New("tool is required")
+	ErrTitleRequired       = errors.New("title is required")
+	ErrFilePathRequired    = errors.New("file path is required")
+	ErrInvalidLineNumber   = errors.New("line number must be greater than 0")
 )
 
 // Severity levels for findings.

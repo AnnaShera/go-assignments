@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"errors"
+	"strings"
 	"time"
 )
 
@@ -18,8 +18,8 @@ func (s Scan) Validate() error {
 	if s.ProjectID == 0 {
 		return ErrProjectIDRequired
 	}
-	if s.Tool == "" {
-		return errors.New("tool is required")
+	if strings.TrimSpace(s.Tool) == "" {
+		return ErrToolRequired
 	}
 	return nil
 }

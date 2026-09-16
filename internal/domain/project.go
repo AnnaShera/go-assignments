@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Project represents a security scanning project.
 type Project struct {
@@ -11,7 +14,7 @@ type Project struct {
 
 // Validate checks that a project has required fields.
 func (p Project) Validate() error {
-	if p.Name == "" {
+	if strings.TrimSpace(p.Name) == "" {
 		return ErrProjectNameRequired
 	}
 	return nil

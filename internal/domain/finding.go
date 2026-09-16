@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"errors"
+	"strings"
 	"time"
 )
 
@@ -22,31 +22,32 @@ func (f Finding) Validate() error {
 	if f.ScanID == 0 {
 		return ErrScanIDRequired
 	}
-	if f.Title == "" {
-		return errors.New("title is required")
+	if strings.TrimSpace(f.Title) == "" {
+		return ErrTitleRequired
 	}
 	if f.Severity == "" {
 		return ErrInvalidSeverity
 	}
-	if !isValidSeverity(f.Severity) {
+	if !IsValidSeverity(f.Severity) {
 		return ErrInvalidSeverity
 	}
 	if f.Status == "" {
 		return ErrInvalidStatus
 	}
-	if !isValidStatus(f.Status) {
+	if !IsValidStatus(f.Status) {
 		return ErrInvalidStatus
 	}
-	if f.FilePath == "" {
-		return errors.New("file path is required")
+	if strings.TrimSpace(f.FilePath) == "" {
+		return ErrFilePathRequired
 	}
 	if f.LineNumber <= 0 {
-		return errors.New("line number must be greater than 0")
+		return ErrInvalidLineNumber
 	}
 	return nil
 }
 
-func isValidSeverity(s string) bool {
+// IsValidSeverity checks if a severity string is valid.
+func IsValidSeverity(s string) bool {
 	switch s {
 	case SeverityLow, SeverityMedium, SeverityHigh, SeverityCritical:
 		return true
@@ -54,7 +55,8 @@ func isValidSeverity(s string) bool {
 	return false
 }
 
-func isValidStatus(s string) bool {
+// IsValidStatus checks if a status string is valid.
+func IsValidStatus(s string) bool {
 	switch s {
 	case StatusOpen, StatusConfirmed, StatusFalsePositive, StatusResolved:
 		return true

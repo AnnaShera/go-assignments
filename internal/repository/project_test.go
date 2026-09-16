@@ -23,7 +23,7 @@ func NewFakeProjectRepository() *FakeProjectRepository {
 }
 
 func (f *FakeProjectRepository) ListProjects(ctx context.Context) ([]domain.Project, error) {
-	var projects []domain.Project
+	projects := []domain.Project{}
 	for _, p := range f.projects {
 		projects = append(projects, p)
 	}
