@@ -45,8 +45,10 @@ defaults and tradeoffs this repo follows.
 
 ## Status
 
-Early scaffold: schema, `docker-compose.yml`, and the Go module skeleton
-exist. Handlers and models are not implemented yet.
+Schema, `docker-compose.yml`, the Go module skeleton, and the
+repository layer are done. Project HTTP handlers (list/get/create/delete)
+are implemented and wired up in `cmd/api/main.go`; scan and finding
+handlers are not yet implemented.
 
 ## Running locally
 

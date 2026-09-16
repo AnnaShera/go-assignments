@@ -169,9 +169,10 @@ func (rec *statusRecorder) WriteHeader(status int) {
 	rec.ResponseWriter.WriteHeader(status)
 }
 
-// withLogging wraps next to log method, path, status, and latency at info
+// WithLogging wraps next to log method, path, status, and latency at info
 // level once the request completes, per STANDARDS.md's logging default.
-func (h *Handler) withLogging(next http.HandlerFunc) http.HandlerFunc {
+// Exported so route registration in cmd/api/main.go can apply it per route.
+func (h *Handler) WithLogging(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
