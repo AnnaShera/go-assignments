@@ -96,9 +96,15 @@ func TestListScansByProject_ReturnsScansForProject(t *testing.T) {
 	repo := NewFakeScanRepository()
 	repo.AddProject(1)
 	repo.AddProject(2)
-	repo.CreateScan(context.Background(), 1, "nmap")
-	repo.CreateScan(context.Background(), 1, "zap")
-	repo.CreateScan(context.Background(), 2, "nikto")
+	if _, err := repo.CreateScan(context.Background(), 1, "nmap"); err != nil {
+		t.Fatalf("setup: create scan nmap: %v", err)
+	}
+	if _, err := repo.CreateScan(context.Background(), 1, "zap"); err != nil {
+		t.Fatalf("setup: create scan zap: %v", err)
+	}
+	if _, err := repo.CreateScan(context.Background(), 2, "nikto"); err != nil {
+		t.Fatalf("setup: create scan nikto: %v", err)
+	}
 
 	scans, err := repo.ListScansByProject(context.Background(), 1)
 

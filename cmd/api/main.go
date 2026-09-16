@@ -1,6 +1,7 @@
 // Command api starts the vuln-findings HTTP server: it connects to
 // Postgres, wires the repository into the handlers, and serves the
-// project endpoints with graceful shutdown on SIGINT/SIGTERM.
+// project, scan, and finding endpoints with graceful shutdown on
+// SIGINT/SIGTERM.
 package main
 
 import (
@@ -54,6 +55,17 @@ func main() {
 	mux.HandleFunc("GET /projects/{id}", h.WithLogging(h.GetProject))
 	mux.HandleFunc("POST /projects", h.WithLogging(h.CreateProject))
 	mux.HandleFunc("DELETE /projects/{id}", h.WithLogging(h.DeleteProject))
+
+	mux.HandleFunc("GET /projects/{projectID}/scans", h.WithLogging(h.ListScans))
+	mux.HandleFunc("POST /projects/{projectID}/scans", h.WithLogging(h.CreateScan))
+	mux.HandleFunc("GET /scans/{id}", h.WithLogging(h.GetScan))
+	mux.HandleFunc("DELETE /scans/{id}", h.WithLogging(h.DeleteScan))
+
+	mux.HandleFunc("GET /scans/{scanID}/findings", h.WithLogging(h.ListFindings))
+	mux.HandleFunc("POST /scans/{scanID}/findings", h.WithLogging(h.CreateFinding))
+	mux.HandleFunc("GET /findings/{id}", h.WithLogging(h.GetFinding))
+	mux.HandleFunc("PATCH /findings/{id}", h.WithLogging(h.UpdateFindingStatus))
+	mux.HandleFunc("DELETE /findings/{id}", h.WithLogging(h.DeleteFinding))
 
 	addr := ":" + getenvDefault("PORT", "8080")
 	server := &http.Server{

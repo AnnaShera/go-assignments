@@ -89,14 +89,16 @@ type errorBody struct {
 	Code    string `json:"code"`
 }
 
-// Repository is the persistence dependency the handlers package needs.
-// It is scoped to project operations today; scan/finding handlers can
-// widen it later. Depending on this narrow interface rather than the full
-// repository.Repository keeps the package boundary honest about what it
-// actually uses, and lets tests satisfy it with a small fake instead of
-// implementing scan/finding/Close methods they don't exercise.
+// Repository is the persistence dependency the handlers package needs:
+// projects, scans, and findings, now that all three have handlers.
+// Depending on this interface rather than the full repository.Repository
+// keeps the package boundary honest about what it actually uses, and lets
+// tests satisfy it with a small fake instead of implementing a Close
+// method it doesn't exercise.
 type Repository interface {
 	repository.ProjectRepository
+	repository.ScanRepository
+	repository.FindingRepository
 }
 
 // Handler holds the dependencies HTTP handlers need: a repository and a
@@ -152,6 +154,19 @@ func parseID(raw string) (int64, error) {
 		return 0, errInvalidID
 	}
 	return id, nil
+}
+
+// decodeJSON decodes r's body into dst, returning errInvalidBody (mapped to
+// 400 invalid_input) rather than the raw json error, which would leak
+// decoder internals to the client. Every handler that accepts a JSON body
+// (CreateProject, CreateScan, CreateFinding, UpdateFindingStatus) calls
+// this instead of decoding inline, per STANDARDS.md's single-mapping-point
+// default for the error contract.
+func decodeJSON(r *http.Request, dst any) error {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		return errInvalidBody
+	}
+	return nil
 }
 
 // statusRecorder wraps http.ResponseWriter to capture the status code
@@ -220,8 +235,8 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // CreateProject handles POST /projects.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var req createProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, errInvalidBody)
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
 		return
 	}
 
@@ -242,6 +257,201 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.repo.DeleteProject(r.Context(), id); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// createScanRequest is the JSON body accepted by CreateScan.
+type createScanRequest struct {
+	Tool string `json:"tool"`
+}
+
+// ListScans handles GET /projects/{projectID}/scans.
+func (h *Handler) ListScans(w http.ResponseWriter, r *http.Request) {
+	projectID, err := parseID(r.PathValue("projectID"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	scans, err := h.repo.ListScansByProject(r.Context(), projectID)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusOK, scans)
+}
+
+// GetScan handles GET /scans/{id}.
+func (h *Handler) GetScan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	scan, err := h.repo.GetScanByID(r.Context(), id)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusOK, scan)
+}
+
+// CreateScan handles POST /projects/{projectID}/scans.
+func (h *Handler) CreateScan(w http.ResponseWriter, r *http.Request) {
+	projectID, err := parseID(r.PathValue("projectID"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	var req createScanRequest
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	scan, err := h.repo.CreateScan(r.Context(), projectID, req.Tool)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusCreated, scan)
+}
+
+// DeleteScan handles DELETE /scans/{id}.
+func (h *Handler) DeleteScan(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	if err := h.repo.DeleteScan(r.Context(), id); err != nil {
+		h.writeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// createFindingRequest is the JSON body accepted by CreateFinding.
+type createFindingRequest struct {
+	Title      string `json:"title"`
+	Severity   string `json:"severity"`
+	Status     string `json:"status"`
+	FilePath   string `json:"file_path"`
+	LineNumber int    `json:"line_number"`
+}
+
+// updateFindingStatusRequest is the JSON body accepted by
+// UpdateFindingStatus.
+type updateFindingStatusRequest struct {
+	Status string `json:"status"`
+}
+
+// ListFindings handles GET /scans/{scanID}/findings.
+func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
+	scanID, err := parseID(r.PathValue("scanID"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusOK, findings)
+}
+
+// GetFinding handles GET /findings/{id}.
+func (h *Handler) GetFinding(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	finding, err := h.repo.GetFindingByID(r.Context(), id)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusOK, finding)
+}
+
+// CreateFinding handles POST /scans/{scanID}/findings.
+func (h *Handler) CreateFinding(w http.ResponseWriter, r *http.Request) {
+	scanID, err := parseID(r.PathValue("scanID"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	var req createFindingRequest
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	finding := domain.Finding{
+		ScanID:     scanID,
+		Title:      req.Title,
+		Severity:   req.Severity,
+		Status:     req.Status,
+		FilePath:   req.FilePath,
+		LineNumber: req.LineNumber,
+	}
+	created, err := h.repo.CreateFinding(r.Context(), finding)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusCreated, created)
+}
+
+// UpdateFindingStatus handles PATCH /findings/{id}. On success it returns
+// the finding as it stands after the update, saving the client a
+// follow-up GET.
+func (h *Handler) UpdateFindingStatus(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	var req updateFindingStatusRequest
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	if err := h.repo.UpdateFindingStatus(r.Context(), id, req.Status); err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	finding, err := h.repo.GetFindingByID(r.Context(), id)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+	h.writeData(w, http.StatusOK, finding)
+}
+
+// DeleteFinding handles DELETE /findings/{id}.
+func (h *Handler) DeleteFinding(w http.ResponseWriter, r *http.Request) {
+	id, err := parseID(r.PathValue("id"))
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	if err := h.repo.DeleteFinding(r.Context(), id); err != nil {
 		h.writeError(w, err)
 		return
 	}

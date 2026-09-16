@@ -77,8 +77,12 @@ func TestListProjects_Empty(t *testing.T) {
 
 func TestListProjects_ReturnsAllProjects(t *testing.T) {
 	repo := NewFakeProjectRepository()
-	repo.CreateProject(context.Background(), "Project A")
-	repo.CreateProject(context.Background(), "Project B")
+	if _, err := repo.CreateProject(context.Background(), "Project A"); err != nil {
+		t.Fatalf("setup: create project A: %v", err)
+	}
+	if _, err := repo.CreateProject(context.Background(), "Project B"); err != nil {
+		t.Fatalf("setup: create project B: %v", err)
+	}
 
 	projects, err := repo.ListProjects(context.Background())
 
