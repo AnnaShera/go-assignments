@@ -18,6 +18,7 @@ type ScanRepository interface {
 	ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error)
 	GetScanByID(ctx context.Context, id int64) (domain.Scan, error)
 	CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error)
+	DeleteScan(ctx context.Context, id int64) error
 }
 
 // FindingRepository defines database operations for findings.
@@ -26,6 +27,7 @@ type FindingRepository interface {
 	GetFindingByID(ctx context.Context, id int64) (domain.Finding, error)
 	CreateFinding(ctx context.Context, finding domain.Finding) (domain.Finding, error)
 	UpdateFindingStatus(ctx context.Context, id int64, status string) error
+	DeleteFinding(ctx context.Context, id int64) error
 }
 
 // Repository groups all repository interfaces.

@@ -163,6 +163,26 @@ func (r *pgRepository) CreateScan(ctx context.Context, projectID int64, tool str
 	return s, nil
 }
 
+// DeleteScan removes a scan by ID. Findings under it are removed by the
+// database via ON DELETE CASCADE.
+func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM scans WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("delete scan: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+
+	return nil
+}
+
 // ListFindingsByScan returns all findings for a scan.
 func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64) ([]domain.Finding, error) {
 	rows, err := r.db.QueryContext(ctx,
@@ -237,6 +257,25 @@ func (r *pgRepository) UpdateFindingStatus(ctx context.Context, id int64, status
 	result, err := r.db.ExecContext(ctx, "UPDATE findings SET status = $1 WHERE id = $2", status, id)
 	if err != nil {
 		return fmt.Errorf("update finding: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("rows affected: %w", err)
+	}
+
+	if rows == 0 {
+		return domain.ErrNotFound
+	}
+
+	return nil
+}
+
+// DeleteFinding removes a finding by ID.
+func (r *pgRepository) DeleteFinding(ctx context.Context, id int64) error {
+	result, err := r.db.ExecContext(ctx, "DELETE FROM findings WHERE id = $1", id)
+	if err != nil {
+		return fmt.Errorf("delete finding: %w", err)
 	}
 
 	rows, err := result.RowsAffected()
