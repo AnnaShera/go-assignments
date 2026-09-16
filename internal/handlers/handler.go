@@ -4,9 +4,11 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 	"github.com/AnnaShera/vuln-findings-api/internal/repository"
@@ -108,22 +110,134 @@ func NewHandler(repo Repository, log *slog.Logger) *Handler {
 	return &Handler{repo: repo, log: log}
 }
 
+// createProjectRequest is the JSON body accepted by CreateProject.
+type createProjectRequest struct {
+	Name string `json:"name"`
+}
+
 // ListProjects handles GET /projects.
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	projects, err := h.repo.ListProjects(r.Context())
+	if err != nil {
+		status, code, message := mapError(err)
+		h.log.Error("list projects failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(envelope{Data: projects}); err != nil {
+		h.log.Error("encode response failed", "error", err)
+	}
 }
 
 // GetProject handles GET /projects/{id}.
 func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		status, code, message := mapError(errInvalidID)
+		h.log.Warn("get project failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	project, err := h.repo.GetProjectByID(r.Context(), id)
+	if err != nil {
+		status, code, message := mapError(err)
+		if status == http.StatusInternalServerError {
+			h.log.Error("get project failed", "error", err)
+		} else {
+			h.log.Warn("get project failed", "error", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(envelope{Data: project}); err != nil {
+		h.log.Error("encode response failed", "error", err)
+	}
 }
 
 // CreateProject handles POST /projects.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	var req createProjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		status, code, message := mapError(errInvalidBody)
+		h.log.Warn("create project failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	project, err := h.repo.CreateProject(r.Context(), req.Name)
+	if err != nil {
+		status, code, message := mapError(err)
+		if status == http.StatusInternalServerError {
+			h.log.Error("create project failed", "error", err)
+		} else {
+			h.log.Warn("create project failed", "error", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	if err := json.NewEncoder(w).Encode(envelope{Data: project}); err != nil {
+		h.log.Error("encode response failed", "error", err)
+	}
 }
 
 // DeleteProject handles DELETE /projects/{id}.
 func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		status, code, message := mapError(errInvalidID)
+		h.log.Warn("delete project failed", "error", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	if err := h.repo.DeleteProject(r.Context(), id); err != nil {
+		status, code, message := mapError(err)
+		if status == http.StatusInternalServerError {
+			h.log.Error("delete project failed", "error", err)
+		} else {
+			h.log.Warn("delete project failed", "error", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		if encErr := json.NewEncoder(w).Encode(envelope{Error: &errorBody{Message: message, Code: code}}); encErr != nil {
+			h.log.Error("encode error response failed", "error", encErr)
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
