@@ -22,12 +22,16 @@ func NewPostgresRepository(db *sql.DB) Repository {
 }
 
 // ListProjects returns all projects.
-func (r *pgRepository) ListProjects(ctx context.Context) ([]domain.Project, error) {
+func (r *pgRepository) ListProjects(ctx context.Context) (_ []domain.Project, err error) {
 	rows, err := r.db.QueryContext(ctx, "SELECT id, name, created_at FROM projects ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rows: %w", cerr)
+		}
+	}()
 
 	projects := []domain.Project{}
 	for rows.Next() {
@@ -107,14 +111,18 @@ func (r *pgRepository) deleteByID(ctx context.Context, query, opLabel string, id
 }
 
 // ListScansByProject returns all scans for a project.
-func (r *pgRepository) ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error) {
+func (r *pgRepository) ListScansByProject(ctx context.Context, projectID int64) (_ []domain.Scan, err error) {
 	rows, err := r.db.QueryContext(ctx,
 		"SELECT id, project_id, tool, started_at FROM scans WHERE project_id = $1 ORDER BY id",
 		projectID)
 	if err != nil {
 		return nil, fmt.Errorf("list scans: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rows: %w", cerr)
+		}
+	}()
 
 	scans := []domain.Scan{}
 	for rows.Next() {
@@ -178,14 +186,18 @@ func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
 }
 
 // ListFindingsByScan returns all findings for a scan.
-func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64) ([]domain.Finding, error) {
+func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64) (_ []domain.Finding, err error) {
 	rows, err := r.db.QueryContext(ctx,
 		"SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE scan_id = $1 ORDER BY id",
 		scanID)
 	if err != nil {
 		return nil, fmt.Errorf("list findings: %w", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if cerr := rows.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("close rows: %w", cerr)
+		}
+	}()
 
 	findings := []domain.Finding{}
 	for rows.Next() {
