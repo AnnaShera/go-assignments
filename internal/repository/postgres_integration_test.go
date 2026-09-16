@@ -5,9 +5,12 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {
@@ -110,5 +113,159 @@ func TestNewPostgresRepository_DeleteProject_Integration(t *testing.T) {
 	_, err = repo.GetProjectByID(context.Background(), created.ID)
 	if err.Error() != "not found" {
 		t.Errorf("expected 'not found' error, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_CreateScan_ProjectNotFound_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+
+	_, err := repo.CreateScan(context.Background(), 999999, "nmap")
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_CreateFinding_ScanNotFound_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	finding := domain.Finding{
+		ScanID:     999999,
+		Title:      "SQL Injection",
+		Severity:   domain.SeverityHigh,
+		Status:     domain.StatusOpen,
+		FilePath:   "internal/handler/user.go",
+		LineNumber: 42,
+	}
+
+	_, err := repo.CreateFinding(context.Background(), finding)
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_DeleteProject_CascadesToScansAndFindings_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Cascade Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("setup: create scan: %v", err)
+	}
+	finding, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID:     scan.ID,
+		Title:      "SQL Injection",
+		Severity:   domain.SeverityHigh,
+		Status:     domain.StatusOpen,
+		FilePath:   "internal/handler/user.go",
+		LineNumber: 42,
+	})
+	if err != nil {
+		t.Fatalf("setup: create finding: %v", err)
+	}
+
+	if err := repo.DeleteProject(context.Background(), project.ID); err != nil {
+		t.Fatalf("delete project: %v", err)
+	}
+
+	if _, err := repo.GetScanByID(context.Background(), scan.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected scan to be cascade-deleted, got %v", err)
+	}
+	if _, err := repo.GetFindingByID(context.Background(), finding.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected finding to be cascade-deleted, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_DeleteScan_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Delete Scan Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("setup: create scan: %v", err)
+	}
+
+	if err := repo.DeleteScan(context.Background(), scan.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := repo.GetScanByID(context.Background(), scan.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_DeleteScan_NotFound_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+
+	err := repo.DeleteScan(context.Background(), 999999)
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_DeleteFinding_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Delete Finding Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("setup: create scan: %v", err)
+	}
+	finding, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID:     scan.ID,
+		Title:      "SQL Injection",
+		Severity:   domain.SeverityHigh,
+		Status:     domain.StatusOpen,
+		FilePath:   "internal/handler/user.go",
+		LineNumber: 42,
+	})
+	if err != nil {
+		t.Fatalf("setup: create finding: %v", err)
+	}
+
+	if err := repo.DeleteFinding(context.Background(), finding.ID); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := repo.GetFindingByID(context.Background(), finding.ID); !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+}
+
+func TestNewPostgresRepository_DeleteFinding_NotFound_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	repo := NewPostgresRepository(db)
+
+	err := repo.DeleteFinding(context.Background(), 999999)
+
+	if !errors.Is(err, domain.ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
