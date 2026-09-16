@@ -156,6 +156,19 @@ func parseID(raw string) (int64, error) {
 	return id, nil
 }
 
+// decodeJSON decodes r's body into dst, returning errInvalidBody (mapped to
+// 400 invalid_input) rather than the raw json error, which would leak
+// decoder internals to the client. Every handler that accepts a JSON body
+// (CreateProject, CreateScan, CreateFinding, UpdateFindingStatus) calls
+// this instead of decoding inline, per STANDARDS.md's single-mapping-point
+// default for the error contract.
+func decodeJSON(r *http.Request, dst any) error {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		return errInvalidBody
+	}
+	return nil
+}
+
 // statusRecorder wraps http.ResponseWriter to capture the status code
 // written, so withLogging can report it after the handler returns control.
 type statusRecorder struct {
@@ -222,8 +235,8 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // CreateProject handles POST /projects.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var req createProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, errInvalidBody)
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
 		return
 	}
 
@@ -296,8 +309,8 @@ func (h *Handler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createScanRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, errInvalidBody)
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
 		return
 	}
 
@@ -380,8 +393,8 @@ func (h *Handler) CreateFinding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createFindingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, errInvalidBody)
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
 		return
 	}
 
@@ -412,8 +425,8 @@ func (h *Handler) UpdateFindingStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateFindingStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeError(w, errInvalidBody)
+	if err := decodeJSON(r, &req); err != nil {
+		h.writeError(w, err)
 		return
 	}
 
