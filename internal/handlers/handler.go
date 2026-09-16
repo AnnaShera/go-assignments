@@ -247,3 +247,48 @@ func (h *Handler) DeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ListScans handles GET /projects/{projectID}/scans.
+func (h *Handler) ListScans(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetScan handles GET /scans/{id}.
+func (h *Handler) GetScan(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateScan handles POST /projects/{projectID}/scans.
+func (h *Handler) CreateScan(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteScan handles DELETE /scans/{id}.
+func (h *Handler) DeleteScan(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListFindings handles GET /scans/{scanID}/findings.
+func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetFinding handles GET /findings/{id}.
+func (h *Handler) GetFinding(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// CreateFinding handles POST /scans/{scanID}/findings.
+func (h *Handler) CreateFinding(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// UpdateFindingStatus handles PATCH /findings/{id}.
+func (h *Handler) UpdateFindingStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// DeleteFinding handles DELETE /findings/{id}.
+func (h *Handler) DeleteFinding(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}

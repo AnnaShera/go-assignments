@@ -24,10 +24,23 @@ type fakeRepo struct {
 	projects map[int64]domain.Project
 	nextID   int64
 	listErr  error
+
+	scans      map[int64]domain.Scan
+	nextScanID int64
+
+	findings      map[int64]domain.Finding
+	nextFindingID int64
 }
 
 func newFakeRepo() *fakeRepo {
-	return &fakeRepo{projects: make(map[int64]domain.Project), nextID: 1}
+	return &fakeRepo{
+		projects:      make(map[int64]domain.Project),
+		nextID:        1,
+		scans:         make(map[int64]domain.Scan),
+		nextScanID:    1,
+		findings:      make(map[int64]domain.Finding),
+		nextFindingID: 1,
+	}
 }
 
 func (f *fakeRepo) ListProjects(ctx context.Context) ([]domain.Project, error) {
@@ -64,6 +77,105 @@ func (f *fakeRepo) DeleteProject(ctx context.Context, id int64) error {
 		return domain.ErrNotFound
 	}
 	delete(f.projects, id)
+	return nil
+}
+
+func (f *fakeRepo) ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error) {
+	scans := []domain.Scan{}
+	for _, s := range f.scans {
+		if s.ProjectID == projectID {
+			scans = append(scans, s)
+		}
+	}
+	return scans, nil
+}
+
+func (f *fakeRepo) GetScanByID(ctx context.Context, id int64) (domain.Scan, error) {
+	s, ok := f.scans[id]
+	if !ok {
+		return domain.Scan{}, domain.ErrNotFound
+	}
+	return s, nil
+}
+
+func (f *fakeRepo) CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error) {
+	s := domain.Scan{ProjectID: projectID, Tool: tool}
+	if err := s.Validate(); err != nil {
+		return domain.Scan{}, err
+	}
+	// Mirrors the real FK check (postgres.go's CreateScan maps a 23503
+	// violation to ErrNotFound): the fake has no real foreign key, so it
+	// checks the projects map directly instead.
+	if _, ok := f.projects[projectID]; !ok {
+		return domain.Scan{}, domain.ErrNotFound
+	}
+	s.ID = f.nextScanID
+	s.StartedAt = time.Now()
+	f.scans[s.ID] = s
+	f.nextScanID++
+	return s, nil
+}
+
+func (f *fakeRepo) DeleteScan(ctx context.Context, id int64) error {
+	if _, ok := f.scans[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(f.scans, id)
+	return nil
+}
+
+func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64) ([]domain.Finding, error) {
+	findings := []domain.Finding{}
+	for _, fd := range f.findings {
+		if fd.ScanID == scanID {
+			findings = append(findings, fd)
+		}
+	}
+	return findings, nil
+}
+
+func (f *fakeRepo) GetFindingByID(ctx context.Context, id int64) (domain.Finding, error) {
+	fd, ok := f.findings[id]
+	if !ok {
+		return domain.Finding{}, domain.ErrNotFound
+	}
+	return fd, nil
+}
+
+func (f *fakeRepo) CreateFinding(ctx context.Context, finding domain.Finding) (domain.Finding, error) {
+	if err := finding.Validate(); err != nil {
+		return domain.Finding{}, err
+	}
+	// Mirrors the real FK check on scan_id, same reasoning as CreateScan
+	// above.
+	if _, ok := f.scans[finding.ScanID]; !ok {
+		return domain.Finding{}, domain.ErrNotFound
+	}
+	finding.ID = f.nextFindingID
+	finding.CreatedAt = time.Now()
+	f.findings[finding.ID] = finding
+	f.nextFindingID++
+	return finding, nil
+}
+
+func (f *fakeRepo) UpdateFindingStatus(ctx context.Context, id int64, status string) error {
+	if !domain.IsValidStatus(status) {
+		return domain.ErrInvalidStatus
+	}
+	fd, ok := f.findings[id]
+	if !ok {
+		return domain.ErrNotFound
+	}
+	fd.Status = status
+	f.findings[id] = fd
+	return nil
+}
+
+func (f *fakeRepo) DeleteFinding(ctx context.Context, id int64) error {
+	if _, ok := f.findings[id]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(f.findings, id)
 	return nil
 }
 
@@ -314,6 +426,589 @@ func TestDeleteProject_NotFound_Returns404(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	h.DeleteProject(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+// --- Scan handlers ---
+
+func TestListScans_Returns200WithScans(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	if _, err := repo.CreateScan(context.Background(), project.ID, "nmap"); err != nil {
+		t.Fatalf("seed scan: %v", err)
+	}
+	if _, err := repo.CreateScan(context.Background(), project.ID, "zap"); err != nil {
+		t.Fatalf("seed scan: %v", err)
+	}
+
+	projectIDStr := strconv.FormatInt(project.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+projectIDStr+"/scans", nil)
+	req.SetPathValue("projectID", projectIDStr)
+	w := httptest.NewRecorder()
+
+	h.ListScans(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var scans []domain.Scan
+	if err := json.Unmarshal(env.Data, &scans); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if len(scans) != 2 {
+		t.Errorf("expected 2 scans, got %d", len(scans))
+	}
+}
+
+func TestListScans_EmptyReturns200WithEmptyArray(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	projectIDStr := strconv.FormatInt(project.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/projects/"+projectIDStr+"/scans", nil)
+	req.SetPathValue("projectID", projectIDStr)
+	w := httptest.NewRecorder()
+
+	h.ListScans(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if string(env.Data) != "[]" {
+		t.Errorf("expected empty array \"[]\", got %q", string(env.Data))
+	}
+}
+
+func TestGetScan_Returns200WithScan(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	created, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("seed scan: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/scans/"+idStr, nil)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.GetScan(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var scan domain.Scan
+	if err := json.Unmarshal(env.Data, &scan); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if scan.ID != created.ID {
+		t.Errorf("expected ID %d, got %d", created.ID, scan.ID)
+	}
+	if scan.Tool != "nmap" {
+		t.Errorf("expected tool 'nmap', got %q", scan.Tool)
+	}
+}
+
+func TestGetScan_NotFoundReturns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/scans/999", nil)
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.GetScan(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+func TestCreateScan_ValidInput_Returns201WithScan(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	projectIDStr := strconv.FormatInt(project.ID, 10)
+	body := bytes.NewBufferString(`{"tool":"nmap"}`)
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+projectIDStr+"/scans", body)
+	req.SetPathValue("projectID", projectIDStr)
+	w := httptest.NewRecorder()
+
+	h.CreateScan(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var scan domain.Scan
+	if err := json.Unmarshal(env.Data, &scan); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if scan.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+	if scan.ProjectID != project.ID {
+		t.Errorf("expected project ID %d, got %d", project.ID, scan.ProjectID)
+	}
+	if scan.Tool != "nmap" {
+		t.Errorf("expected tool 'nmap', got %q", scan.Tool)
+	}
+}
+
+func TestCreateScan_NonexistentProject_Returns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	// Project 999 was never created, simulating the FK violation the real
+	// repository maps to ErrNotFound (see postgres.go CreateScan).
+	body := bytes.NewBufferString(`{"tool":"nmap"}`)
+	req := httptest.NewRequest(http.MethodPost, "/projects/999/scans", body)
+	req.SetPathValue("projectID", "999")
+	w := httptest.NewRecorder()
+
+	h.CreateScan(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+func TestCreateScan_MissingTool_Returns400(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	projectIDStr := strconv.FormatInt(project.ID, 10)
+	body := bytes.NewBufferString(`{"tool":""}`)
+	req := httptest.NewRequest(http.MethodPost, "/projects/"+projectIDStr+"/scans", body)
+	req.SetPathValue("projectID", projectIDStr)
+	w := httptest.NewRecorder()
+
+	h.CreateScan(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeInvalidInput {
+		t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+	}
+}
+
+func TestDeleteScan_Returns204NoContent(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	created, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("seed scan: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	req := httptest.NewRequest(http.MethodDelete, "/scans/"+idStr, nil)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.DeleteScan(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body, got %q", w.Body.String())
+	}
+	if _, err := repo.GetScanByID(context.Background(), created.ID); err != domain.ErrNotFound {
+		t.Errorf("expected scan to be deleted, got err=%v", err)
+	}
+}
+
+func TestDeleteScan_NotFound_Returns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodDelete, "/scans/999", nil)
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.DeleteScan(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+// --- Finding handlers ---
+
+// seedScan seeds a project and a scan under it, returning the scan. Shared
+// by the finding tests below, which all need a valid scan ID to hang
+// findings off.
+func seedScan(t *testing.T, repo *fakeRepo) domain.Scan {
+	t.Helper()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("seed scan: %v", err)
+	}
+	return scan
+}
+
+func TestListFindings_Returns200WithFindings(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	finding := domain.Finding{
+		ScanID: scan.ID, Title: "SQLi", Severity: domain.SeverityHigh,
+		Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 10,
+	}
+	if _, err := repo.CreateFinding(context.Background(), finding); err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+	if _, err := repo.CreateFinding(context.Background(), finding); err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/scans/"+scanIDStr+"/findings", nil)
+	req.SetPathValue("scanID", scanIDStr)
+	w := httptest.NewRecorder()
+
+	h.ListFindings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var findings []domain.Finding
+	if err := json.Unmarshal(env.Data, &findings); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if len(findings) != 2 {
+		t.Errorf("expected 2 findings, got %d", len(findings))
+	}
+}
+
+func TestListFindings_EmptyReturns200WithEmptyArray(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/scans/"+scanIDStr+"/findings", nil)
+	req.SetPathValue("scanID", scanIDStr)
+	w := httptest.NewRecorder()
+
+	h.ListFindings(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if string(env.Data) != "[]" {
+		t.Errorf("expected empty array \"[]\", got %q", string(env.Data))
+	}
+}
+
+func TestGetFinding_Returns200WithFinding(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	created, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID: scan.ID, Title: "SQLi", Severity: domain.SeverityHigh,
+		Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	req := httptest.NewRequest(http.MethodGet, "/findings/"+idStr, nil)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.GetFinding(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var finding domain.Finding
+	if err := json.Unmarshal(env.Data, &finding); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if finding.ID != created.ID {
+		t.Errorf("expected ID %d, got %d", created.ID, finding.ID)
+	}
+	if finding.Title != "SQLi" {
+		t.Errorf("expected title 'SQLi', got %q", finding.Title)
+	}
+}
+
+func TestGetFinding_NotFoundReturns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodGet, "/findings/999", nil)
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.GetFinding(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+func TestCreateFinding_ValidInput_Returns201WithFinding(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+	body := bytes.NewBufferString(`{"title":"SQL Injection","severity":"high","status":"open","file_path":"a.go","line_number":42}`)
+	req := httptest.NewRequest(http.MethodPost, "/scans/"+scanIDStr+"/findings", body)
+	req.SetPathValue("scanID", scanIDStr)
+	w := httptest.NewRecorder()
+
+	h.CreateFinding(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status 201, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var finding domain.Finding
+	if err := json.Unmarshal(env.Data, &finding); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if finding.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+	if finding.ScanID != scan.ID {
+		t.Errorf("expected scan ID %d, got %d", scan.ID, finding.ScanID)
+	}
+	if finding.Title != "SQL Injection" {
+		t.Errorf("expected title 'SQL Injection', got %q", finding.Title)
+	}
+	if finding.LineNumber != 42 {
+		t.Errorf("expected line number 42, got %d", finding.LineNumber)
+	}
+}
+
+func TestCreateFinding_NonexistentScan_Returns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	// Scan 999 was never created, simulating the FK violation the real
+	// repository maps to ErrNotFound (see postgres.go CreateFinding).
+	body := bytes.NewBufferString(`{"title":"SQLi","severity":"high","status":"open","file_path":"a.go","line_number":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/scans/999/findings", body)
+	req.SetPathValue("scanID", "999")
+	w := httptest.NewRecorder()
+
+	h.CreateFinding(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+func TestCreateFinding_InvalidSeverity_Returns400(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+	body := bytes.NewBufferString(`{"title":"SQLi","severity":"extreme","status":"open","file_path":"a.go","line_number":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/scans/"+scanIDStr+"/findings", body)
+	req.SetPathValue("scanID", scanIDStr)
+	w := httptest.NewRecorder()
+
+	h.CreateFinding(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeInvalidInput {
+		t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+	}
+}
+
+func TestCreateFinding_InvalidStatus_Returns400(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+	body := bytes.NewBufferString(`{"title":"SQLi","severity":"high","status":"unknown","file_path":"a.go","line_number":1}`)
+	req := httptest.NewRequest(http.MethodPost, "/scans/"+scanIDStr+"/findings", body)
+	req.SetPathValue("scanID", scanIDStr)
+	w := httptest.NewRecorder()
+
+	h.CreateFinding(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeInvalidInput {
+		t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+	}
+}
+
+func TestUpdateFindingStatus_ValidInput_Returns200WithUpdatedFinding(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	created, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID: scan.ID, Title: "SQLi", Severity: domain.SeverityHigh,
+		Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	body := bytes.NewBufferString(`{"status":"resolved"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/findings/"+idStr, body)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.UpdateFindingStatus(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	var finding domain.Finding
+	if err := json.Unmarshal(env.Data, &finding); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if finding.Status != domain.StatusResolved {
+		t.Errorf("expected status %q, got %q", domain.StatusResolved, finding.Status)
+	}
+}
+
+func TestUpdateFindingStatus_InvalidStatus_Returns400(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	created, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID: scan.ID, Title: "SQLi", Severity: domain.SeverityHigh,
+		Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	body := bytes.NewBufferString(`{"status":"bogus"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/findings/"+idStr, body)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.UpdateFindingStatus(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeInvalidInput {
+		t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+	}
+}
+
+func TestUpdateFindingStatus_NotFound_Returns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	body := bytes.NewBufferString(`{"status":"resolved"}`)
+	req := httptest.NewRequest(http.MethodPatch, "/findings/999", body)
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.UpdateFindingStatus(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeNotFound {
+		t.Errorf("expected code %q, got %+v", CodeNotFound, env.Error)
+	}
+}
+
+func TestDeleteFinding_Returns204NoContent(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	created, err := repo.CreateFinding(context.Background(), domain.Finding{
+		ScanID: scan.ID, Title: "SQLi", Severity: domain.SeverityHigh,
+		Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 10,
+	})
+	if err != nil {
+		t.Fatalf("seed finding: %v", err)
+	}
+
+	idStr := strconv.FormatInt(created.ID, 10)
+	req := httptest.NewRequest(http.MethodDelete, "/findings/"+idStr, nil)
+	req.SetPathValue("id", idStr)
+	w := httptest.NewRecorder()
+
+	h.DeleteFinding(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("expected status 204, got %d, body=%s", w.Code, w.Body.String())
+	}
+	if w.Body.Len() != 0 {
+		t.Errorf("expected empty body, got %q", w.Body.String())
+	}
+	if _, err := repo.GetFindingByID(context.Background(), created.ID); err != domain.ErrNotFound {
+		t.Errorf("expected finding to be deleted, got err=%v", err)
+	}
+}
+
+func TestDeleteFinding_NotFound_Returns404(t *testing.T) {
+	h, _ := newTestHandler()
+
+	req := httptest.NewRequest(http.MethodDelete, "/findings/999", nil)
+	req.SetPathValue("id", "999")
+	w := httptest.NewRecorder()
+
+	h.DeleteFinding(w, req)
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("expected status 404, got %d, body=%s", w.Code, w.Body.String())
