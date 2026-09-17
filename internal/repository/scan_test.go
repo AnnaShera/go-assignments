@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -33,14 +34,14 @@ func (f *FakeScanRepository) AddProject(projectID int64) {
 	f.validProjectIDs[projectID] = true
 }
 
-func (f *FakeScanRepository) ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error) {
+func (f *FakeScanRepository) ListScansByProject(ctx context.Context, projectID int64, p Pagination) ([]domain.Scan, error) {
 	scans := []domain.Scan{}
 	for _, s := range f.scans {
 		if s.ProjectID == projectID {
 			scans = append(scans, s)
 		}
 	}
-	return scans, nil
+	return paginateByID(scans, func(s domain.Scan) int64 { return s.ID }, p), nil
 }
 
 func (f *FakeScanRepository) GetScanByID(ctx context.Context, id int64) (domain.Scan, error) {
@@ -82,7 +83,7 @@ func (f *FakeScanRepository) DeleteScan(ctx context.Context, id int64) error {
 func TestListScansByProject_Empty(t *testing.T) {
 	repo := NewFakeScanRepository()
 
-	scans, err := repo.ListScansByProject(context.Background(), 1)
+	scans, err := repo.ListScansByProject(context.Background(), 1, Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -106,7 +107,7 @@ func TestListScansByProject_ReturnsScansForProject(t *testing.T) {
 		t.Fatalf("setup: create scan nikto: %v", err)
 	}
 
-	scans, err := repo.ListScansByProject(context.Background(), 1)
+	scans, err := repo.ListScansByProject(context.Background(), 1, Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -118,6 +119,61 @@ func TestListScansByProject_ReturnsScansForProject(t *testing.T) {
 		if s.ProjectID != 1 {
 			t.Errorf("expected only project 1 scans, got scan for project %d", s.ProjectID)
 		}
+	}
+}
+
+// TestListScansByProject_Pagination covers Pagination handling for a
+// single project's scans: default page size, an explicit sub-page in id
+// order, and an offset past the end returning an empty slice.
+func TestListScansByProject_Pagination(t *testing.T) {
+	repo := NewFakeScanRepository()
+	repo.AddProject(1)
+	var seeded []domain.Scan
+	for i := 0; i < 5; i++ {
+		s, err := repo.CreateScan(context.Background(), 1, fmt.Sprintf("tool-%d", i))
+		if err != nil {
+			t.Fatalf("setup: create scan %d: %v", i, err)
+		}
+		seeded = append(seeded, s)
+	}
+
+	tests := []struct {
+		name       string
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 3},
+			wantIDs:    []int64{seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scans, err := repo.ListScansByProject(context.Background(), 1, tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(scans) != len(tt.wantIDs) {
+				t.Fatalf("expected %d scans, got %d", len(tt.wantIDs), len(scans))
+			}
+			for i, want := range tt.wantIDs {
+				if scans[i].ID != want {
+					t.Errorf("index %d: expected scan ID %d, got %d", i, want, scans[i].ID)
+				}
+			}
+		})
 	}
 }
 

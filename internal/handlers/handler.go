@@ -34,8 +34,9 @@ const maxBodyBytes = 1 << 20
 // reach the repository (bad path param, unparsable body). Kept private:
 // callers only ever see the mapped HTTP response.
 var (
-	errInvalidID   = errors.New("invalid id")
-	errInvalidBody = errors.New("invalid request body")
+	errInvalidID         = errors.New("invalid id")
+	errInvalidBody       = errors.New("invalid request body")
+	errInvalidPagination = errors.New("limit and offset must be non-negative integers")
 )
 
 // validationErrors lists every domain sentinel that represents a client
@@ -79,7 +80,7 @@ func mapError(err error) (status int, code string, message string) {
 		return http.StatusNotFound, CodeNotFound, "resource not found"
 	case errors.As(err, &maxBytesErr):
 		return http.StatusRequestEntityTooLarge, CodeRequestTooLarge, "request body too large"
-	case errors.Is(err, errInvalidID), errors.Is(err, errInvalidBody), isValidationError(err):
+	case errors.Is(err, errInvalidID), errors.Is(err, errInvalidBody), errors.Is(err, errInvalidPagination), isValidationError(err):
 		return http.StatusBadRequest, CodeInvalidInput, err.Error()
 	default:
 		return http.StatusInternalServerError, CodeInternal, "internal server error"
@@ -166,6 +167,39 @@ func parseID(raw string) (int64, error) {
 	return id, nil
 }
 
+// parsePagination reads the optional ?limit= and ?offset= query params off
+// r into a repository.Pagination. Either param left unset keeps that
+// field at its zero value: an unset limit is handled by
+// Pagination.Normalize defaulting it at the repository layer, and a zero
+// offset is already correct as-is. A present value that isn't a
+// non-negative integer is rejected as errInvalidPagination (mapped to 400
+// invalid_input) rather than silently defaulted or clamped: unlike a
+// limit above the repository's cap (a reasonable, silent clamp), a
+// malformed or negative value here is a client mistake that should be
+// visible.
+func parsePagination(r *http.Request) (repository.Pagination, error) {
+	q := r.URL.Query()
+	var p repository.Pagination
+
+	if raw := q.Get("limit"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit < 0 {
+			return repository.Pagination{}, errInvalidPagination
+		}
+		p.Limit = limit
+	}
+
+	if raw := q.Get("offset"); raw != "" {
+		offset, err := strconv.Atoi(raw)
+		if err != nil || offset < 0 {
+			return repository.Pagination{}, errInvalidPagination
+		}
+		p.Offset = offset
+	}
+
+	return p, nil
+}
+
 // decodeJSON decodes r's body into dst, capped at maxBodyBytes via
 // http.MaxBytesReader so an unauthenticated client can't drive memory/CPU
 // exhaustion with an oversized body. A body over the limit surfaces as
@@ -226,9 +260,16 @@ type createProjectRequest struct {
 	Name string `json:"name"`
 }
 
-// ListProjects handles GET /projects.
+// ListProjects handles GET /projects, optionally paged by the ?limit= and
+// ?offset= query params.
 func (h *Handler) ListProjects(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.repo.ListProjects(r.Context())
+	pagination, err := parsePagination(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	projects, err := h.repo.ListProjects(r.Context(), pagination)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -288,7 +329,8 @@ type createScanRequest struct {
 	Tool string `json:"tool"`
 }
 
-// ListScans handles GET /projects/{projectID}/scans.
+// ListScans handles GET /projects/{projectID}/scans, optionally paged by
+// the ?limit= and ?offset= query params.
 func (h *Handler) ListScans(w http.ResponseWriter, r *http.Request) {
 	projectID, err := parseID(r.PathValue("projectID"))
 	if err != nil {
@@ -296,7 +338,13 @@ func (h *Handler) ListScans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	scans, err := h.repo.ListScansByProject(r.Context(), projectID)
+	pagination, err := parsePagination(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	scans, err := h.repo.ListScansByProject(r.Context(), projectID, pagination)
 	if err != nil {
 		h.writeError(w, err)
 		return
@@ -395,7 +443,7 @@ func parseFindingFilter(r *http.Request) (repository.FindingFilter, error) {
 }
 
 // ListFindings handles GET /scans/{scanID}/findings, optionally narrowed by
-// the ?severity= and/or ?status= query params.
+// the ?severity= and/or ?status= query params and paged by ?limit=/?offset=.
 func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 	scanID, err := parseID(r.PathValue("scanID"))
 	if err != nil {
@@ -409,7 +457,13 @@ func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID, filter)
+	pagination, err := parsePagination(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID, filter, pagination)
 	if err != nil {
 		h.writeError(w, err)
 		return

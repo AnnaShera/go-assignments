@@ -7,7 +7,7 @@ import (
 
 // ProjectRepository defines database operations for projects.
 type ProjectRepository interface {
-	ListProjects(ctx context.Context) ([]domain.Project, error)
+	ListProjects(ctx context.Context, p Pagination) ([]domain.Project, error)
 	GetProjectByID(ctx context.Context, id int64) (domain.Project, error)
 	CreateProject(ctx context.Context, name string) (domain.Project, error)
 	DeleteProject(ctx context.Context, id int64) error
@@ -15,7 +15,7 @@ type ProjectRepository interface {
 
 // ScanRepository defines database operations for scans.
 type ScanRepository interface {
-	ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error)
+	ListScansByProject(ctx context.Context, projectID int64, p Pagination) ([]domain.Scan, error)
 	GetScanByID(ctx context.Context, id int64) (domain.Scan, error)
 	CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error)
 	DeleteScan(ctx context.Context, id int64) error
@@ -68,7 +68,7 @@ type FindingFilter struct {
 
 // FindingRepository defines database operations for findings.
 type FindingRepository interface {
-	ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) ([]domain.Finding, error)
+	ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter, p Pagination) ([]domain.Finding, error)
 	GetFindingByID(ctx context.Context, id int64) (domain.Finding, error)
 	CreateFinding(ctx context.Context, finding domain.Finding) (domain.Finding, error)
 	UpdateFindingStatus(ctx context.Context, id int64, status string) error

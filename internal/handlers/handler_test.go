@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -16,6 +18,23 @@ import (
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 	"github.com/AnnaShera/vuln-findings-api/internal/repository"
 )
+
+// paginateByID sorts items by ID ascending, mirroring the real
+// repository's ORDER BY id, and returns the window p.Normalize()
+// describes. Shared by fakeRepo's three List methods below, which each
+// need identical windowing logic over a different element type.
+func paginateByID[T any](items []T, id func(T) int64, p repository.Pagination) []T {
+	sort.Slice(items, func(i, j int) bool { return id(items[i]) < id(items[j]) })
+	p = p.Normalize()
+	if p.Offset >= len(items) {
+		return []T{}
+	}
+	end := p.Offset + p.Limit
+	if end > len(items) {
+		end = len(items)
+	}
+	return items[p.Offset:end]
+}
 
 // fakeRepo is a package-local test double for Repository. It can't reuse
 // repository.FakeProjectRepository because that type is defined in a
@@ -45,7 +64,7 @@ func newFakeRepo() *fakeRepo {
 	}
 }
 
-func (f *fakeRepo) ListProjects(ctx context.Context) ([]domain.Project, error) {
+func (f *fakeRepo) ListProjects(ctx context.Context, pg repository.Pagination) ([]domain.Project, error) {
 	if f.listErr != nil {
 		return nil, f.listErr
 	}
@@ -53,7 +72,7 @@ func (f *fakeRepo) ListProjects(ctx context.Context) ([]domain.Project, error) {
 	for _, p := range f.projects {
 		projects = append(projects, p)
 	}
-	return projects, nil
+	return paginateByID(projects, func(p domain.Project) int64 { return p.ID }, pg), nil
 }
 
 func (f *fakeRepo) GetProjectByID(ctx context.Context, id int64) (domain.Project, error) {
@@ -82,14 +101,14 @@ func (f *fakeRepo) DeleteProject(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeRepo) ListScansByProject(ctx context.Context, projectID int64) ([]domain.Scan, error) {
+func (f *fakeRepo) ListScansByProject(ctx context.Context, projectID int64, pg repository.Pagination) ([]domain.Scan, error) {
 	scans := []domain.Scan{}
 	for _, s := range f.scans {
 		if s.ProjectID == projectID {
 			scans = append(scans, s)
 		}
 	}
-	return scans, nil
+	return paginateByID(scans, func(s domain.Scan) int64 { return s.ID }, pg), nil
 }
 
 func (f *fakeRepo) GetScanByID(ctx context.Context, id int64) (domain.Scan, error) {
@@ -127,8 +146,8 @@ func (f *fakeRepo) DeleteScan(ctx context.Context, id int64) error {
 }
 
 // ListFindingsByScan returns findings for scanID, optionally narrowed by
-// filter.Severity and/or filter.Status.
-func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64, filter repository.FindingFilter) ([]domain.Finding, error) {
+// filter.Severity and/or filter.Status, and paged per pg.
+func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64, filter repository.FindingFilter, pg repository.Pagination) ([]domain.Finding, error) {
 	findings := []domain.Finding{}
 	for _, fd := range f.findings {
 		if fd.ScanID != scanID {
@@ -142,7 +161,7 @@ func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64, filter 
 		}
 		findings = append(findings, fd)
 	}
-	return findings, nil
+	return paginateByID(findings, func(fd domain.Finding) int64 { return fd.ID }, pg), nil
 }
 
 func (f *fakeRepo) GetFindingByID(ctx context.Context, id int64) (domain.Finding, error) {
@@ -260,6 +279,63 @@ func TestListProjects_EmptyReturns200WithEmptyArray(t *testing.T) {
 	env := decodeEnvelope(t, w)
 	if string(env.Data) != "[]" {
 		t.Errorf("expected empty array \"[]\", got %q", string(env.Data))
+	}
+}
+
+// TestListProjects_Pagination covers the ?limit=/?offset= query params on
+// GET /projects: unset defaults, explicit values page correctly, an
+// offset past the end returns an empty array rather than an error, and a
+// non-numeric or negative value is rejected as 400 invalid_input rather
+// than silently defaulted or clamped.
+func TestListProjects_Pagination(t *testing.T) {
+	h, repo := newTestHandler()
+	for i := 0; i < 5; i++ {
+		if _, err := repo.CreateProject(context.Background(), fmt.Sprintf("Project %d", i)); err != nil {
+			t.Fatalf("seed project %d: %v", i, err)
+		}
+	}
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantCount  int
+	}{
+		{name: "no params returns all seeded (under default limit)", query: "", wantStatus: http.StatusOK, wantCount: 5},
+		{name: "explicit limit narrows the page", query: "?limit=2", wantStatus: http.StatusOK, wantCount: 2},
+		{name: "explicit limit and offset selects a sub-page", query: "?limit=2&offset=3", wantStatus: http.StatusOK, wantCount: 2},
+		{name: "offset past the end returns empty array", query: "?limit=10&offset=100", wantStatus: http.StatusOK, wantCount: 0},
+		{name: "non-numeric limit returns 400", query: "?limit=abc", wantStatus: http.StatusBadRequest},
+		{name: "negative limit returns 400", query: "?limit=-1", wantStatus: http.StatusBadRequest},
+		{name: "non-numeric offset returns 400", query: "?offset=abc", wantStatus: http.StatusBadRequest},
+		{name: "negative offset returns 400", query: "?offset=-1", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/projects"+tt.query, nil)
+			w := httptest.NewRecorder()
+
+			h.ListProjects(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d, body=%s", tt.wantStatus, w.Code, w.Body.String())
+			}
+			env := decodeEnvelope(t, w)
+			if tt.wantStatus != http.StatusOK {
+				if env.Error == nil || env.Error.Code != CodeInvalidInput {
+					t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+				}
+				return
+			}
+			var projects []domain.Project
+			if err := json.Unmarshal(env.Data, &projects); err != nil {
+				t.Fatalf("decode data: %v", err)
+			}
+			if len(projects) != tt.wantCount {
+				t.Errorf("expected %d projects, got %d", tt.wantCount, len(projects))
+			}
+		})
 	}
 }
 
@@ -590,6 +666,60 @@ func TestListScans_EmptyReturns200WithEmptyArray(t *testing.T) {
 	env := decodeEnvelope(t, w)
 	if string(env.Data) != "[]" {
 		t.Errorf("expected empty array \"[]\", got %q", string(env.Data))
+	}
+}
+
+// TestListScans_Pagination covers the ?limit=/?offset= query params on
+// GET /projects/{projectID}/scans.
+func TestListScans_Pagination(t *testing.T) {
+	h, repo := newTestHandler()
+	project, err := repo.CreateProject(context.Background(), "Project A")
+	if err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if _, err := repo.CreateScan(context.Background(), project.ID, fmt.Sprintf("tool-%d", i)); err != nil {
+			t.Fatalf("seed scan %d: %v", i, err)
+		}
+	}
+	projectIDStr := strconv.FormatInt(project.ID, 10)
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantCount  int
+	}{
+		{name: "explicit limit narrows the page", query: "?limit=2", wantStatus: http.StatusOK, wantCount: 2},
+		{name: "negative offset returns 400", query: "?offset=-1", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/projects/"+projectIDStr+"/scans"+tt.query, nil)
+			req.SetPathValue("projectID", projectIDStr)
+			w := httptest.NewRecorder()
+
+			h.ListScans(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d, body=%s", tt.wantStatus, w.Code, w.Body.String())
+			}
+			env := decodeEnvelope(t, w)
+			if tt.wantStatus != http.StatusOK {
+				if env.Error == nil || env.Error.Code != CodeInvalidInput {
+					t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+				}
+				return
+			}
+			var scans []domain.Scan
+			if err := json.Unmarshal(env.Data, &scans); err != nil {
+				t.Fatalf("decode data: %v", err)
+			}
+			if len(scans) != tt.wantCount {
+				t.Errorf("expected %d scans, got %d", tt.wantCount, len(scans))
+			}
+		})
 	}
 }
 
@@ -939,6 +1069,62 @@ func TestListFindings_InvalidFilterValue_Returns400(t *testing.T) {
 			env := decodeEnvelope(t, w)
 			if env.Error == nil || env.Error.Code != CodeInvalidInput {
 				t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+			}
+		})
+	}
+}
+
+// TestListFindings_Pagination covers the ?limit=/?offset= query params on
+// GET /scans/{scanID}/findings, orthogonal to the ?severity=/?status=
+// filters covered by TestListFindings_QueryFilters.
+func TestListFindings_Pagination(t *testing.T) {
+	h, repo := newTestHandler()
+	scan := seedScan(t, repo)
+	for i := 0; i < 3; i++ {
+		fd := domain.Finding{
+			ScanID: scan.ID, Title: fmt.Sprintf("Finding %d", i), Severity: domain.SeverityHigh,
+			Status: domain.StatusOpen, FilePath: "a.go", LineNumber: i + 1,
+		}
+		if _, err := repo.CreateFinding(context.Background(), fd); err != nil {
+			t.Fatalf("seed finding %d: %v", i, err)
+		}
+	}
+	scanIDStr := strconv.FormatInt(scan.ID, 10)
+
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		wantCount  int
+	}{
+		{name: "explicit limit narrows the page", query: "?limit=2", wantStatus: http.StatusOK, wantCount: 2},
+		{name: "non-numeric limit returns 400", query: "?limit=abc", wantStatus: http.StatusBadRequest},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/scans/"+scanIDStr+"/findings"+tt.query, nil)
+			req.SetPathValue("scanID", scanIDStr)
+			w := httptest.NewRecorder()
+
+			h.ListFindings(w, req)
+
+			if w.Code != tt.wantStatus {
+				t.Fatalf("expected status %d, got %d, body=%s", tt.wantStatus, w.Code, w.Body.String())
+			}
+			env := decodeEnvelope(t, w)
+			if tt.wantStatus != http.StatusOK {
+				if env.Error == nil || env.Error.Code != CodeInvalidInput {
+					t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+				}
+				return
+			}
+			var findings []domain.Finding
+			if err := json.Unmarshal(env.Data, &findings); err != nil {
+				t.Fatalf("decode data: %v", err)
+			}
+			if len(findings) != tt.wantCount {
+				t.Errorf("expected %d findings, got %d", tt.wantCount, len(findings))
 			}
 		})
 	}

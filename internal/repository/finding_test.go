@@ -34,8 +34,8 @@ func (f *FakeFindingRepository) AddScan(scanID int64) {
 }
 
 // ListFindingsByScan returns findings for scanID, optionally narrowed by
-// filter.Severity and/or filter.Status.
-func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) ([]domain.Finding, error) {
+// filter.Severity and/or filter.Status, and paged per p.
+func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter, p Pagination) ([]domain.Finding, error) {
 	findings := []domain.Finding{}
 	for _, fd := range f.findings {
 		if fd.ScanID != scanID {
@@ -49,7 +49,7 @@ func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID i
 		}
 		findings = append(findings, fd)
 	}
-	return findings, nil
+	return paginateByID(findings, func(fd domain.Finding) int64 { return fd.ID }, p), nil
 }
 
 func (f *FakeFindingRepository) GetFindingByID(ctx context.Context, id int64) (domain.Finding, error) {
@@ -128,7 +128,7 @@ func findingWith(scanID int64, severity, status string) domain.Finding {
 func TestListFindingsByScan_Empty(t *testing.T) {
 	repo := NewFakeFindingRepository()
 
-	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{})
+	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{}, Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -155,7 +155,7 @@ func TestListFindingsByScan_ReturnsFindingsForScan(t *testing.T) {
 		t.Fatalf("setup: unexpected error: %v", err)
 	}
 
-	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{})
+	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{}, Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -224,7 +224,7 @@ func TestListFindingsByScan_Filtering(t *testing.T) {
 				}
 			}
 
-			findings, err := repo.ListFindingsByScan(context.Background(), 1, tt.filter)
+			findings, err := repo.ListFindingsByScan(context.Background(), 1, tt.filter, Pagination{})
 
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
@@ -241,6 +241,68 @@ func TestListFindingsByScan_Filtering(t *testing.T) {
 				}
 				if tt.wantStatus != "" && fd.Status != tt.wantStatus {
 					t.Errorf("expected status %q, got %q", tt.wantStatus, fd.Status)
+				}
+			}
+		})
+	}
+}
+
+// TestListFindingsByScan_Pagination covers Pagination handling combined
+// with FindingFilter: pagination and filtering are orthogonal, so a page
+// window applies to the already-filtered result set, in id order.
+func TestListFindingsByScan_Pagination(t *testing.T) {
+	repo := NewFakeFindingRepository()
+	repo.AddScan(1)
+	var seeded []domain.Finding
+	for i := 0; i < 5; i++ {
+		fd, err := repo.CreateFinding(context.Background(), findingWith(1, domain.SeverityHigh, domain.StatusOpen))
+		if err != nil {
+			t.Fatalf("setup: create finding %d: %v", i, err)
+		}
+		seeded = append(seeded, fd)
+	}
+
+	tests := []struct {
+		name       string
+		filter     FindingFilter
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 1},
+			wantIDs:    []int64{seeded[1].ID, seeded[2].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+		{
+			name:       "pagination applies to the filtered set",
+			filter:     FindingFilter{Severity: domain.SeverityHigh},
+			pagination: Pagination{Limit: 2, Offset: 2},
+			wantIDs:    []int64{seeded[2].ID, seeded[3].ID},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, err := repo.ListFindingsByScan(context.Background(), 1, tt.filter, tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(findings) != len(tt.wantIDs) {
+				t.Fatalf("expected %d findings, got %d", len(tt.wantIDs), len(findings))
+			}
+			for i, want := range tt.wantIDs {
+				if findings[i].ID != want {
+					t.Errorf("index %d: expected finding ID %d, got %d", i, want, findings[i].ID)
 				}
 			}
 		})
