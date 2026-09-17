@@ -20,7 +20,7 @@ See [`migrations/0001_init.sql`](migrations/0001_init.sql) for the exact
 schema (foreign keys, cascade deletes, and constraints on `severity` /
 `status`).
 
-## Planned API
+## API
 
 | Method | Path                | Notes                              |
 |--------|---------------------|-------------------------------------|
@@ -46,9 +46,11 @@ defaults and tradeoffs this repo follows.
 ## Status
 
 Schema, `docker-compose.yml`, the Go module skeleton, and the
-repository layer are done. Project HTTP handlers (list/get/create/delete)
-are implemented and wired up in `cmd/api/main.go`; scan and finding
-handlers are not yet implemented.
+repository layer are done. Project, scan, and finding HTTP handlers
+(list/get/create/delete, plus `?severity=`/`?status=` filtering on
+`GET /scans/{id}/findings`) are implemented and wired up in
+`cmd/api/main.go`. CRUD for all three resources — projects, scans, and
+findings — is complete.
 
 ## Running locally
 
