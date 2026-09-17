@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -391,6 +392,94 @@ func TestCreateProject_InvalidJSON_Returns400(t *testing.T) {
 	env := decodeEnvelope(t, w)
 	if env.Error == nil || env.Error.Code != CodeInvalidInput {
 		t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+	}
+}
+
+// TestDecodeJSON_BodySizeLimit drives decodeJSON directly (it's
+// package-private, decodeJSON lives in handler.go) across the three cases
+// STANDARDS.md's error-handling default cares about here: a normal small
+// body still decodes, a too-large body is distinguished from an ordinary
+// malformed body so it can map to 413 instead of 400, and a malformed-but-
+// small body keeps the existing 400 behavior.
+func TestDecodeJSON_BodySizeLimit(t *testing.T) {
+	type payload struct {
+		Name string `json:"name"`
+	}
+
+	tests := []struct {
+		name       string
+		body       string
+		wantErr    bool
+		wantStatus int
+		wantCode   string
+	}{
+		{
+			name:    "body under limit decodes fine",
+			body:    `{"name":"ok"}`,
+			wantErr: false,
+		},
+		{
+			name:       "malformed JSON under limit returns 400",
+			body:       `{not valid json`,
+			wantErr:    true,
+			wantStatus: http.StatusBadRequest,
+			wantCode:   CodeInvalidInput,
+		},
+		{
+			name:       "body over limit returns 413",
+			body:       `{"name":"` + strings.Repeat("a", maxBodyBytes+1) + `"}`,
+			wantErr:    true,
+			wantStatus: http.StatusRequestEntityTooLarge,
+			wantCode:   CodeRequestTooLarge,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/projects", bytes.NewBufferString(tt.body))
+			w := httptest.NewRecorder()
+
+			var dst payload
+			err := decodeJSON(w, req, &dst)
+
+			if !tt.wantErr {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			status, code, _ := mapError(err)
+			if status != tt.wantStatus {
+				t.Errorf("expected status %d, got %d", tt.wantStatus, status)
+			}
+			if code != tt.wantCode {
+				t.Errorf("expected code %q, got %q", tt.wantCode, code)
+			}
+		})
+	}
+}
+
+// TestCreateProject_BodyTooLarge_Returns413 confirms the size limit is
+// actually wired into the handler call site, not just decodeJSON in
+// isolation.
+func TestCreateProject_BodyTooLarge_Returns413(t *testing.T) {
+	h, _ := newTestHandler()
+
+	body := bytes.NewBufferString(`{"name":"` + strings.Repeat("a", maxBodyBytes+1) + `"}`)
+	req := httptest.NewRequest(http.MethodPost, "/projects", body)
+	w := httptest.NewRecorder()
+
+	h.CreateProject(w, req)
+
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected status 413, got %d, body=%s", w.Code, w.Body.String())
+	}
+	env := decodeEnvelope(t, w)
+	if env.Error == nil || env.Error.Code != CodeRequestTooLarge {
+		t.Errorf("expected code %q, got %+v", CodeRequestTooLarge, env.Error)
 	}
 }
 

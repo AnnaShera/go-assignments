@@ -18,10 +18,17 @@ import (
 // Error codes returned in the JSON error envelope. Clients should branch on
 // these, not on the human-readable message.
 const (
-	CodeNotFound     = "not_found"
-	CodeInvalidInput = "invalid_input"
-	CodeInternal     = "internal_error"
+	CodeNotFound        = "not_found"
+	CodeInvalidInput    = "invalid_input"
+	CodeInternal        = "internal_error"
+	CodeRequestTooLarge = "request_too_large"
 )
+
+// maxBodyBytes caps the size of a decoded request body. 1 MiB comfortably
+// covers this API's small JSON payloads (project/scan/finding fields, no
+// file uploads); an unauthenticated client sending an unbounded body would
+// otherwise be able to drive memory/CPU exhaustion on a single request.
+const maxBodyBytes = 1 << 20
 
 // Handler-local sentinel errors for request-parsing failures that never
 // reach the repository (bad path param, unparsable body). Kept private:
@@ -66,9 +73,12 @@ func isValidationError(err error) bool {
 // internal: the client gets a generic message, the real error is logged
 // by the caller.
 func mapError(err error) (status int, code string, message string) {
+	var maxBytesErr *http.MaxBytesError
 	switch {
 	case errors.Is(err, domain.ErrNotFound):
 		return http.StatusNotFound, CodeNotFound, "resource not found"
+	case errors.As(err, &maxBytesErr):
+		return http.StatusRequestEntityTooLarge, CodeRequestTooLarge, "request body too large"
 	case errors.Is(err, errInvalidID), errors.Is(err, errInvalidBody), isValidationError(err):
 		return http.StatusBadRequest, CodeInvalidInput, err.Error()
 	default:
@@ -156,14 +166,24 @@ func parseID(raw string) (int64, error) {
 	return id, nil
 }
 
-// decodeJSON decodes r's body into dst, returning errInvalidBody (mapped to
-// 400 invalid_input) rather than the raw json error, which would leak
-// decoder internals to the client. Every handler that accepts a JSON body
-// (CreateProject, CreateScan, CreateFinding, UpdateFindingStatus) calls
-// this instead of decoding inline, per STANDARDS.md's single-mapping-point
-// default for the error contract.
-func decodeJSON(r *http.Request, dst any) error {
+// decodeJSON decodes r's body into dst, capped at maxBodyBytes via
+// http.MaxBytesReader so an unauthenticated client can't drive memory/CPU
+// exhaustion with an oversized body. A body over the limit surfaces as
+// *http.MaxBytesError (mapped to 413 request_too_large by mapError) and is
+// returned as-is so errors.As can detect it there; any other decode
+// failure returns errInvalidBody (mapped to 400 invalid_input) rather than
+// the raw json error, which would leak decoder internals to the client.
+// Every handler that accepts a JSON body (CreateProject, CreateScan,
+// CreateFinding, UpdateFindingStatus) calls this instead of decoding
+// inline, per STANDARDS.md's single-mapping-point default for the error
+// contract.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			return err
+		}
 		return errInvalidBody
 	}
 	return nil
@@ -235,7 +255,7 @@ func (h *Handler) GetProject(w http.ResponseWriter, r *http.Request) {
 // CreateProject handles POST /projects.
 func (h *Handler) CreateProject(w http.ResponseWriter, r *http.Request) {
 	var req createProjectRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -309,7 +329,7 @@ func (h *Handler) CreateScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createScanRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -422,7 +442,7 @@ func (h *Handler) CreateFinding(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req createFindingRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		h.writeError(w, err)
 		return
 	}
@@ -454,7 +474,7 @@ func (h *Handler) UpdateFindingStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req updateFindingStatusRequest
-	if err := decodeJSON(r, &req); err != nil {
+	if err := decodeJSON(w, r, &req); err != nil {
 		h.writeError(w, err)
 		return
 	}
