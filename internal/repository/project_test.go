@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -22,12 +23,12 @@ func NewFakeProjectRepository() *FakeProjectRepository {
 	}
 }
 
-func (f *FakeProjectRepository) ListProjects(ctx context.Context) ([]domain.Project, error) {
+func (f *FakeProjectRepository) ListProjects(ctx context.Context, p Pagination) ([]domain.Project, error) {
 	projects := []domain.Project{}
-	for _, p := range f.projects {
-		projects = append(projects, p)
+	for _, proj := range f.projects {
+		projects = append(projects, proj)
 	}
-	return projects, nil
+	return paginateByID(projects, func(proj domain.Project) int64 { return proj.ID }, p), nil
 }
 
 func (f *FakeProjectRepository) GetProjectByID(ctx context.Context, id int64) (domain.Project, error) {
@@ -65,7 +66,7 @@ func (f *FakeProjectRepository) DeleteProject(ctx context.Context, id int64) err
 func TestListProjects_Empty(t *testing.T) {
 	repo := NewFakeProjectRepository()
 
-	projects, err := repo.ListProjects(context.Background())
+	projects, err := repo.ListProjects(context.Background(), Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -84,13 +85,79 @@ func TestListProjects_ReturnsAllProjects(t *testing.T) {
 		t.Fatalf("setup: create project B: %v", err)
 	}
 
-	projects, err := repo.ListProjects(context.Background())
+	projects, err := repo.ListProjects(context.Background(), Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(projects) != 2 {
 		t.Errorf("expected 2 projects, got %d", len(projects))
+	}
+}
+
+// TestListProjects_Pagination covers Pagination handling: no params
+// applies the default page size, an explicit limit/offset selects a
+// sub-page in id order, a limit above the cap is clamped, and an
+// offset past the end of the result set returns an empty slice rather
+// than an error.
+func TestListProjects_Pagination(t *testing.T) {
+	repo := NewFakeProjectRepository()
+	var seeded []domain.Project
+	for i := 0; i < 5; i++ {
+		p, err := repo.CreateProject(context.Background(), fmt.Sprintf("Project %d", i))
+		if err != nil {
+			t.Fatalf("setup: create project %d: %v", i, err)
+		}
+		seeded = append(seeded, p)
+	}
+
+	tests := []struct {
+		name       string
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit returns that many",
+			pagination: Pagination{Limit: 2},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 2},
+			wantIDs:    []int64{seeded[2].ID, seeded[3].ID},
+		},
+		{
+			name:       "limit above cap is clamped to maxPageLimit",
+			pagination: Pagination{Limit: maxPageLimit + 1000},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projects, err := repo.ListProjects(context.Background(), tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(projects) != len(tt.wantIDs) {
+				t.Fatalf("expected %d projects, got %d", len(tt.wantIDs), len(projects))
+			}
+			for i, want := range tt.wantIDs {
+				if projects[i].ID != want {
+					t.Errorf("index %d: expected project ID %d, got %d", i, want, projects[i].ID)
+				}
+			}
+		})
 	}
 }
 

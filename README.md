@@ -24,19 +24,34 @@ schema (foreign keys, cascade deletes, and constraints on `severity` /
 
 | Method | Path                              | Notes                                        |
 |--------|-----------------------------------|-----------------------------------------------|
-| GET    | `/projects`                       |                                               |
+| GET    | `/projects`                       | supports `?limit=`/`?offset=` paging         |
 | POST   | `/projects`                       |                                               |
 | GET    | `/projects/{id}`                  |                                               |
 | DELETE | `/projects/{id}`                  | cascades to the project's scans and findings |
-| GET    | `/projects/{projectID}/scans`     |                                               |
+| GET    | `/projects/{projectID}/scans`     | supports `?limit=`/`?offset=` paging         |
 | POST   | `/projects/{projectID}/scans`     |                                               |
 | GET    | `/scans/{id}`                     |                                               |
 | DELETE | `/scans/{id}`                     | cascades to the scan's findings              |
-| GET    | `/scans/{scanID}/findings`        | supports `?severity=` and `?status=` filters |
+| GET    | `/scans/{scanID}/findings`        | supports `?severity=`/`?status=` filters and `?limit=`/`?offset=` paging |
 | POST   | `/scans/{scanID}/findings`        |                                               |
 | GET    | `/findings/{id}`                  |                                               |
 | PATCH  | `/findings/{id}`                  | partial update (e.g. status change)          |
 | DELETE | `/findings/{id}`                  |                                               |
+
+### Pagination
+
+`GET /projects`, `GET /projects/{projectID}/scans`, and
+`GET /scans/{scanID}/findings` accept `?limit=` and `?offset=`. Omitting
+either applies the default (`limit=50`); a `limit` above the max page
+size (200) is silently clamped down rather than rejected. A non-numeric
+or negative `limit`/`offset` value returns `400 invalid_input` — that's
+a client mistake, unlike an over-cap limit, which is a reasonable clamp.
+
+### Request size limit
+
+Every request body is capped at 1 MiB (`http.MaxBytesReader`), enough
+for this API's small JSON payloads. A body over the limit returns
+`413` with error code `request_too_large`.
 
 ## Stack
 
@@ -53,9 +68,10 @@ defaults and tradeoffs this repo follows.
 Schema, `docker-compose.yml`, the Go module skeleton, and the
 repository layer are done. Project, scan, and finding HTTP handlers
 (list/get/create/delete, plus `?severity=`/`?status=` filtering on
-`GET /scans/{id}/findings`) are implemented and wired up in
-`cmd/api/main.go`. CRUD for all three resources — projects, scans, and
-findings — is complete.
+`GET /scans/{id}/findings`, `?limit=`/`?offset=` paging on all three
+list endpoints, and a 1 MiB request body cap) are implemented and
+wired up in `cmd/api/main.go`. CRUD for all three resources —
+projects, scans, and findings — is complete.
 
 ## Running locally
 

@@ -21,9 +21,14 @@ func NewPostgresRepository(db *sql.DB) Repository {
 	return &pgRepository{db: db}
 }
 
-// ListProjects returns all projects.
-func (r *pgRepository) ListProjects(ctx context.Context) (_ []domain.Project, err error) {
-	rows, err := r.db.QueryContext(ctx, "SELECT id, name, created_at FROM projects ORDER BY id")
+// ListProjects returns a page of projects, ordered by id, per p (see
+// Pagination.Normalize for how defaults and the max page size are
+// applied).
+func (r *pgRepository) ListProjects(ctx context.Context, p Pagination) (_ []domain.Project, err error) {
+	p = p.Normalize()
+	rows, err := r.db.QueryContext(ctx,
+		"SELECT id, name, created_at FROM projects ORDER BY id LIMIT $1 OFFSET $2",
+		p.Limit, p.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
@@ -110,11 +115,13 @@ func (r *pgRepository) deleteByID(ctx context.Context, query, opLabel string, id
 	return nil
 }
 
-// ListScansByProject returns all scans for a project.
-func (r *pgRepository) ListScansByProject(ctx context.Context, projectID int64) (_ []domain.Scan, err error) {
+// ListScansByProject returns a page of scans for a project, ordered by id,
+// per p (see Pagination.Normalize).
+func (r *pgRepository) ListScansByProject(ctx context.Context, projectID int64, p Pagination) (_ []domain.Scan, err error) {
+	p = p.Normalize()
 	rows, err := r.db.QueryContext(ctx,
-		"SELECT id, project_id, tool, started_at FROM scans WHERE project_id = $1 ORDER BY id",
-		projectID)
+		"SELECT id, project_id, tool, started_at FROM scans WHERE project_id = $1 ORDER BY id LIMIT $2 OFFSET $3",
+		projectID, p.Limit, p.Offset)
 	if err != nil {
 		return nil, fmt.Errorf("list scans: %w", err)
 	}
@@ -185,12 +192,14 @@ func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
 	return r.deleteByID(ctx, "DELETE FROM scans WHERE id = $1", "delete scan", id)
 }
 
-// ListFindingsByScan returns findings for a scan, optionally narrowed by
-// filter.Severity and/or filter.Status. Each clause is appended only when
-// its filter field is non-empty; the compared value itself always travels
-// as a bound parameter ($2, $3, ...), never string-concatenated into the
-// query text.
-func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) (_ []domain.Finding, err error) {
+// ListFindingsByScan returns a page of findings for a scan, ordered by id,
+// optionally narrowed by filter.Severity and/or filter.Status and paged
+// per p (see Pagination.Normalize). Each filter clause is appended only
+// when its field is non-empty; every bound value, filters and
+// limit/offset alike, travels as a parameter ($2, $3, ...), never
+// string-concatenated into the query text.
+func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter, p Pagination) (_ []domain.Finding, err error) {
+	p = p.Normalize()
 	query := "SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE scan_id = $1"
 	args := []any{scanID}
 
@@ -203,6 +212,11 @@ func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64, fil
 		query += fmt.Sprintf(" AND status = $%d", len(args))
 	}
 	query += " ORDER BY id"
+
+	args = append(args, p.Limit)
+	query += fmt.Sprintf(" LIMIT $%d", len(args))
+	args = append(args, p.Offset)
+	query += fmt.Sprintf(" OFFSET $%d", len(args))
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {

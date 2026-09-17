@@ -53,4 +53,13 @@ if [ $lint_status -ne 0 ]; then
   exit 2
 fi
 
+lint_integration_output=$("$lint_bin" run --build-tags=integration ./... 2>&1)
+lint_integration_status=$?
+
+if [ $lint_integration_status -ne 0 ]; then
+  echo "Push blocked, golangci-lint failed (-tags=integration):" >&2
+  echo "$lint_integration_output" >&2
+  exit 2
+fi
+
 exit 0

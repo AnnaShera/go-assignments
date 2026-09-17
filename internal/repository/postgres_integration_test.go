@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -19,6 +20,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 
 	if err := db.Ping(); err != nil {
 		t.Fatalf("failed to ping database: %v", err)
@@ -40,11 +46,10 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestNewPostgresRepository_ListProjects_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
-	projects, err := repo.ListProjects(context.Background())
+	projects, err := repo.ListProjects(context.Background(), Pagination{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -56,7 +61,6 @@ func TestNewPostgresRepository_ListProjects_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_CreateProject_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -78,7 +82,6 @@ func TestNewPostgresRepository_CreateProject_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_GetProjectByID_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	created, _ := repo.CreateProject(context.Background(), "Get Test")
@@ -98,7 +101,6 @@ func TestNewPostgresRepository_GetProjectByID_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteProject_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	created, _ := repo.CreateProject(context.Background(), "Delete Test")
@@ -118,7 +120,6 @@ func TestNewPostgresRepository_DeleteProject_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_CreateScan_ProjectNotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -131,7 +132,6 @@ func TestNewPostgresRepository_CreateScan_ProjectNotFound_Integration(t *testing
 
 func TestNewPostgresRepository_CreateFinding_ScanNotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	finding := domain.Finding{
@@ -152,7 +152,6 @@ func TestNewPostgresRepository_CreateFinding_ScanNotFound_Integration(t *testing
 
 func TestNewPostgresRepository_DeleteProject_CascadesToScansAndFindings_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Cascade Test")
@@ -189,7 +188,6 @@ func TestNewPostgresRepository_DeleteProject_CascadesToScansAndFindings_Integrat
 
 func TestNewPostgresRepository_DeleteScan_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Delete Scan Test")
@@ -212,7 +210,6 @@ func TestNewPostgresRepository_DeleteScan_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteScan_NotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -225,7 +222,6 @@ func TestNewPostgresRepository_DeleteScan_NotFound_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteFinding_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Delete Finding Test")
@@ -303,7 +299,7 @@ func TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings, err := repo.ListFindingsByScan(context.Background(), scan.ID, tt.filter)
+			findings, err := repo.ListFindingsByScan(context.Background(), scan.ID, tt.filter, Pagination{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -319,7 +315,6 @@ func TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration(t *testi
 
 func TestNewPostgresRepository_DeleteFinding_NotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -327,5 +322,216 @@ func TestNewPostgresRepository_DeleteFinding_NotFound_Integration(t *testing.T) 
 
 	if !errors.Is(err, domain.ErrNotFound) {
 		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
+
+// TestNewPostgresRepository_ListProjects_Pagination_Integration confirms
+// the LIMIT/OFFSET clauses in ListProjects behave correctly against a real
+// Postgres instance: no params, an explicit sub-page, a limit above the
+// cap being clamped rather than erroring, and an offset past the end
+// returning an empty slice.
+func TestNewPostgresRepository_ListProjects_Pagination_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
+
+	repo := NewPostgresRepository(db)
+	var seeded []domain.Project
+	for i := 0; i < 5; i++ {
+		p, err := repo.CreateProject(context.Background(), fmt.Sprintf("Project %d", i))
+		if err != nil {
+			t.Fatalf("setup: create project %d: %v", i, err)
+		}
+		seeded = append(seeded, p)
+	}
+
+	tests := []struct {
+		name       string
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 2},
+			wantIDs:    []int64{seeded[2].ID, seeded[3].ID},
+		},
+		{
+			name:       "limit above cap is clamped, not rejected",
+			pagination: Pagination{Limit: maxPageLimit + 1000},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			projects, err := repo.ListProjects(context.Background(), tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(projects) != len(tt.wantIDs) {
+				t.Fatalf("expected %d projects, got %d", len(tt.wantIDs), len(projects))
+			}
+			for i, want := range tt.wantIDs {
+				if projects[i].ID != want {
+					t.Errorf("index %d: expected project ID %d, got %d", i, want, projects[i].ID)
+				}
+			}
+		})
+	}
+}
+
+// TestNewPostgresRepository_ListScansByProject_Pagination_Integration
+// mirrors the ListProjects pagination coverage above for scans.
+func TestNewPostgresRepository_ListScansByProject_Pagination_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Scan Pagination Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	var seeded []domain.Scan
+	for i := 0; i < 5; i++ {
+		s, err := repo.CreateScan(context.Background(), project.ID, fmt.Sprintf("tool-%d", i))
+		if err != nil {
+			t.Fatalf("setup: create scan %d: %v", i, err)
+		}
+		seeded = append(seeded, s)
+	}
+
+	tests := []struct {
+		name       string
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 3},
+			wantIDs:    []int64{seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			scans, err := repo.ListScansByProject(context.Background(), project.ID, tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(scans) != len(tt.wantIDs) {
+				t.Fatalf("expected %d scans, got %d", len(tt.wantIDs), len(scans))
+			}
+			for i, want := range tt.wantIDs {
+				if scans[i].ID != want {
+					t.Errorf("index %d: expected scan ID %d, got %d", i, want, scans[i].ID)
+				}
+			}
+		})
+	}
+}
+
+// TestNewPostgresRepository_ListFindingsByScan_Pagination_Integration
+// confirms pagination composes correctly with filtering: the LIMIT/OFFSET
+// window applies to the already-filtered result set.
+func TestNewPostgresRepository_ListFindingsByScan_Pagination_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Finding Pagination Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("setup: create scan: %v", err)
+	}
+	var seeded []domain.Finding
+	for i := 0; i < 5; i++ {
+		fd, err := repo.CreateFinding(context.Background(), domain.Finding{
+			ScanID: scan.ID, Title: fmt.Sprintf("Finding %d", i), Severity: domain.SeverityHigh,
+			Status: domain.StatusOpen, FilePath: "a.go", LineNumber: i + 1,
+		})
+		if err != nil {
+			t.Fatalf("setup: create finding %d: %v", i, err)
+		}
+		seeded = append(seeded, fd)
+	}
+
+	tests := []struct {
+		name       string
+		filter     FindingFilter
+		pagination Pagination
+		wantIDs    []int64
+	}{
+		{
+			name:       "no params returns default page in id order",
+			pagination: Pagination{},
+			wantIDs:    []int64{seeded[0].ID, seeded[1].ID, seeded[2].ID, seeded[3].ID, seeded[4].ID},
+		},
+		{
+			name:       "explicit limit and offset selects a sub-page",
+			pagination: Pagination{Limit: 2, Offset: 1},
+			wantIDs:    []int64{seeded[1].ID, seeded[2].ID},
+		},
+		{
+			name:       "offset past the end returns empty slice not error",
+			pagination: Pagination{Limit: 10, Offset: 100},
+			wantIDs:    []int64{},
+		},
+		{
+			name:       "pagination applies to the filtered set",
+			filter:     FindingFilter{Severity: domain.SeverityHigh},
+			pagination: Pagination{Limit: 2, Offset: 2},
+			wantIDs:    []int64{seeded[2].ID, seeded[3].ID},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, err := repo.ListFindingsByScan(context.Background(), scan.ID, tt.filter, tt.pagination)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if len(findings) != len(tt.wantIDs) {
+				t.Fatalf("expected %d findings, got %d", len(tt.wantIDs), len(findings))
+			}
+			for i, want := range tt.wantIDs {
+				if findings[i].ID != want {
+					t.Errorf("index %d: expected finding ID %d, got %d", i, want, findings[i].ID)
+				}
+			}
+		})
 	}
 }
