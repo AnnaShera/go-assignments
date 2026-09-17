@@ -263,7 +263,11 @@ func TestNewPostgresRepository_DeleteFinding_Integration(t *testing.T) {
 // not just the in-memory fake.
 func TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Filter Test")
