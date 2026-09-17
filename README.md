@@ -22,16 +22,21 @@ schema (foreign keys, cascade deletes, and constraints on `severity` /
 
 ## API
 
-| Method | Path                | Notes                              |
-|--------|---------------------|-------------------------------------|
-| POST   | `/projects`         |                                     |
-| GET    | `/projects`         |                                     |
-| POST   | `/projects/{id}/scans` |                                  |
-| GET    | `/projects/{id}/scans` |                                  |
-| POST   | `/scans/{id}/findings` |                                  |
-| GET    | `/scans/{id}/findings` | supports `?severity=` and `?status=` filters |
-| PATCH  | `/findings/{id}`    | partial update (e.g. status change) |
-| DELETE | `/findings/{id}`    |                                     |
+| Method | Path                              | Notes                                        |
+|--------|-----------------------------------|-----------------------------------------------|
+| GET    | `/projects`                       |                                               |
+| POST   | `/projects`                       |                                               |
+| GET    | `/projects/{id}`                  |                                               |
+| DELETE | `/projects/{id}`                  | cascades to the project's scans and findings |
+| GET    | `/projects/{projectID}/scans`     |                                               |
+| POST   | `/projects/{projectID}/scans`     |                                               |
+| GET    | `/scans/{id}`                     |                                               |
+| DELETE | `/scans/{id}`                     | cascades to the scan's findings              |
+| GET    | `/scans/{scanID}/findings`        | supports `?severity=` and `?status=` filters |
+| POST   | `/scans/{scanID}/findings`        |                                               |
+| GET    | `/findings/{id}`                  |                                               |
+| PATCH  | `/findings/{id}`                  | partial update (e.g. status change)          |
+| DELETE | `/findings/{id}`                  |                                               |
 
 ## Stack
 
