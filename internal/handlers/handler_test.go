@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/vuln-findings-api/internal/repository"
 )
 
 // fakeRepo is a package-local test double for Repository. It can't reuse
@@ -124,12 +125,21 @@ func (f *fakeRepo) DeleteScan(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64) ([]domain.Finding, error) {
+// ListFindingsByScan returns findings for scanID, optionally narrowed by
+// filter.Severity and/or filter.Status.
+func (f *fakeRepo) ListFindingsByScan(ctx context.Context, scanID int64, filter repository.FindingFilter) ([]domain.Finding, error) {
 	findings := []domain.Finding{}
 	for _, fd := range f.findings {
-		if fd.ScanID == scanID {
-			findings = append(findings, fd)
+		if fd.ScanID != scanID {
+			continue
 		}
+		if filter.Severity != "" && fd.Severity != filter.Severity {
+			continue
+		}
+		if filter.Status != "" && fd.Status != filter.Status {
+			continue
+		}
+		findings = append(findings, fd)
 	}
 	return findings, nil
 }
@@ -741,6 +751,107 @@ func TestListFindings_EmptyReturns200WithEmptyArray(t *testing.T) {
 	env := decodeEnvelope(t, w)
 	if string(env.Data) != "[]" {
 		t.Errorf("expected empty array \"[]\", got %q", string(env.Data))
+	}
+}
+
+// TestListFindings_QueryFilters covers ?severity= and ?status= filtering
+// on GET /scans/{scanID}/findings, including both together and neither
+// (existing unfiltered behavior, preserved as one case of this table).
+func TestListFindings_QueryFilters(t *testing.T) {
+	tests := []struct {
+		name         string
+		query        string
+		wantCount    int
+		wantSeverity string // "" = don't check
+		wantStatus   string // "" = don't check
+	}{
+		{name: "no query params returns unfiltered", query: "", wantCount: 3},
+		{name: "severity filter returns only matching", query: "severity=high", wantCount: 2, wantSeverity: domain.SeverityHigh},
+		{name: "status filter returns only matching", query: "status=open", wantCount: 2, wantStatus: domain.StatusOpen},
+		{name: "severity and status filter together", query: "severity=high&status=open", wantCount: 1, wantSeverity: domain.SeverityHigh, wantStatus: domain.StatusOpen},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := newTestHandler()
+			scan := seedScan(t, repo)
+			seed := []domain.Finding{
+				{ScanID: scan.ID, Title: "A", Severity: domain.SeverityHigh, Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 1},
+				{ScanID: scan.ID, Title: "B", Severity: domain.SeverityHigh, Status: domain.StatusResolved, FilePath: "b.go", LineNumber: 2},
+				{ScanID: scan.ID, Title: "C", Severity: domain.SeverityLow, Status: domain.StatusOpen, FilePath: "c.go", LineNumber: 3},
+			}
+			for _, fd := range seed {
+				if _, err := repo.CreateFinding(context.Background(), fd); err != nil {
+					t.Fatalf("seed finding: %v", err)
+				}
+			}
+
+			scanIDStr := strconv.FormatInt(scan.ID, 10)
+			target := "/scans/" + scanIDStr + "/findings"
+			if tt.query != "" {
+				target += "?" + tt.query
+			}
+			req := httptest.NewRequest(http.MethodGet, target, nil)
+			req.SetPathValue("scanID", scanIDStr)
+			w := httptest.NewRecorder()
+
+			h.ListFindings(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200, got %d, body=%s", w.Code, w.Body.String())
+			}
+			env := decodeEnvelope(t, w)
+			var findings []domain.Finding
+			if err := json.Unmarshal(env.Data, &findings); err != nil {
+				t.Fatalf("decode data: %v", err)
+			}
+			if len(findings) != tt.wantCount {
+				t.Fatalf("expected %d findings, got %d", tt.wantCount, len(findings))
+			}
+			for _, fd := range findings {
+				if tt.wantSeverity != "" && fd.Severity != tt.wantSeverity {
+					t.Errorf("expected severity %q, got %q", tt.wantSeverity, fd.Severity)
+				}
+				if tt.wantStatus != "" && fd.Status != tt.wantStatus {
+					t.Errorf("expected status %q, got %q", tt.wantStatus, fd.Status)
+				}
+			}
+		})
+	}
+}
+
+// TestListFindings_InvalidFilterValue_Returns400 confirms an invalid
+// ?severity= or ?status= value is rejected as a 400 rather than silently
+// treated as "no matches."
+func TestListFindings_InvalidFilterValue_Returns400(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{name: "invalid severity", query: "severity=extreme"},
+		{name: "invalid status", query: "status=unknown"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, repo := newTestHandler()
+			scan := seedScan(t, repo)
+
+			scanIDStr := strconv.FormatInt(scan.ID, 10)
+			req := httptest.NewRequest(http.MethodGet, "/scans/"+scanIDStr+"/findings?"+tt.query, nil)
+			req.SetPathValue("scanID", scanIDStr)
+			w := httptest.NewRecorder()
+
+			h.ListFindings(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("expected status 400, got %d, body=%s", w.Code, w.Body.String())
+			}
+			env := decodeEnvelope(t, w)
+			if env.Error == nil || env.Error.Code != CodeInvalidInput {
+				t.Errorf("expected code %q, got %+v", CodeInvalidInput, env.Error)
+			}
+		})
 	}
 }
 

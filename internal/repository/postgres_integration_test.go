@@ -257,6 +257,66 @@ func TestNewPostgresRepository_DeleteFinding_Integration(t *testing.T) {
 	}
 }
 
+// TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration confirms
+// the SQL-level severity/status filtering (parameterized WHERE clauses in
+// pgRepository.ListFindingsByScan) works against a real Postgres instance,
+// not just the in-memory fake.
+func TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	defer func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	}()
+
+	repo := NewPostgresRepository(db)
+	project, err := repo.CreateProject(context.Background(), "Filter Test")
+	if err != nil {
+		t.Fatalf("setup: create project: %v", err)
+	}
+	scan, err := repo.CreateScan(context.Background(), project.ID, "nmap")
+	if err != nil {
+		t.Fatalf("setup: create scan: %v", err)
+	}
+	seed := []domain.Finding{
+		{ScanID: scan.ID, Title: "A", Severity: domain.SeverityHigh, Status: domain.StatusOpen, FilePath: "a.go", LineNumber: 1},
+		{ScanID: scan.ID, Title: "B", Severity: domain.SeverityHigh, Status: domain.StatusResolved, FilePath: "b.go", LineNumber: 2},
+		{ScanID: scan.ID, Title: "C", Severity: domain.SeverityLow, Status: domain.StatusOpen, FilePath: "c.go", LineNumber: 3},
+	}
+	for _, fd := range seed {
+		if _, err := repo.CreateFinding(context.Background(), fd); err != nil {
+			t.Fatalf("setup: create finding: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name      string
+		filter    FindingFilter
+		wantCount int
+	}{
+		{name: "no filter returns all", filter: FindingFilter{}, wantCount: 3},
+		{name: "severity only", filter: FindingFilter{Severity: domain.SeverityHigh}, wantCount: 2},
+		{name: "status only", filter: FindingFilter{Status: domain.StatusOpen}, wantCount: 2},
+		{name: "severity and status", filter: FindingFilter{Severity: domain.SeverityHigh, Status: domain.StatusOpen}, wantCount: 1},
+		{name: "matches nothing", filter: FindingFilter{Severity: domain.SeverityCritical}, wantCount: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, err := repo.ListFindingsByScan(context.Background(), scan.ID, tt.filter)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if findings == nil {
+				t.Error("expected non-nil slice even when empty")
+			}
+			if len(findings) != tt.wantCount {
+				t.Errorf("expected %d findings, got %d", tt.wantCount, len(findings))
+			}
+		})
+	}
+}
+
 func TestNewPostgresRepository_DeleteFinding_NotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()

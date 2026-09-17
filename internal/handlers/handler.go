@@ -352,7 +352,30 @@ type updateFindingStatusRequest struct {
 	Status string `json:"status"`
 }
 
-// ListFindings handles GET /scans/{scanID}/findings.
+// parseFindingFilter reads the optional ?severity= and ?status= query
+// params off r and validates any non-empty value against the domain's
+// known enums. An invalid value is rejected as domain.ErrInvalidSeverity /
+// domain.ErrInvalidStatus (mapped to 400 by mapError via validationErrors)
+// rather than silently passed through to become a filter that matches
+// nothing.
+func parseFindingFilter(r *http.Request) (repository.FindingFilter, error) {
+	q := r.URL.Query()
+
+	severity := q.Get("severity")
+	if severity != "" && !domain.IsValidSeverity(severity) {
+		return repository.FindingFilter{}, domain.ErrInvalidSeverity
+	}
+
+	status := q.Get("status")
+	if status != "" && !domain.IsValidStatus(status) {
+		return repository.FindingFilter{}, domain.ErrInvalidStatus
+	}
+
+	return repository.FindingFilter{Severity: severity, Status: status}, nil
+}
+
+// ListFindings handles GET /scans/{scanID}/findings, optionally narrowed by
+// the ?severity= and/or ?status= query params.
 func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 	scanID, err := parseID(r.PathValue("scanID"))
 	if err != nil {
@@ -360,7 +383,13 @@ func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID)
+	filter, err := parseFindingFilter(r)
+	if err != nil {
+		h.writeError(w, err)
+		return
+	}
+
+	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID, filter)
 	if err != nil {
 		h.writeError(w, err)
 		return
