@@ -5,22 +5,6 @@ import (
 	"github.com/AnnaShera/vuln-findings-api/internal/domain"
 )
 
-// ProjectRepository defines database operations for projects.
-type ProjectRepository interface {
-	ListProjects(ctx context.Context, p Pagination) ([]domain.Project, error)
-	GetProjectByID(ctx context.Context, id int64) (domain.Project, error)
-	CreateProject(ctx context.Context, name string) (domain.Project, error)
-	DeleteProject(ctx context.Context, id int64) error
-}
-
-// ScanRepository defines database operations for scans.
-type ScanRepository interface {
-	ListScansByProject(ctx context.Context, projectID int64, p Pagination) ([]domain.Scan, error)
-	GetScanByID(ctx context.Context, id int64) (domain.Scan, error)
-	CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error)
-	DeleteScan(ctx context.Context, id int64) error
-}
-
 // Default and cap for Pagination.Normalize: a page defaults to 50 rows
 // when the caller doesn't specify a limit, and is clamped to at most 200
 // rows even if the caller asks for more, so a single request can't be
@@ -55,6 +39,22 @@ func (p Pagination) Normalize() Pagination {
 		p.Limit = maxPageLimit
 	}
 	return p
+}
+
+// ProjectRepository defines database operations for projects.
+type ProjectRepository interface {
+	ListProjects(ctx context.Context, p Pagination) ([]domain.Project, error)
+	GetProjectByID(ctx context.Context, id int64) (domain.Project, error)
+	CreateProject(ctx context.Context, name string) (domain.Project, error)
+	DeleteProject(ctx context.Context, id int64) error
+}
+
+// ScanRepository defines database operations for scans.
+type ScanRepository interface {
+	ListScansByProject(ctx context.Context, projectID int64, p Pagination) ([]domain.Scan, error)
+	GetScanByID(ctx context.Context, id int64) (domain.Scan, error)
+	CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error)
+	DeleteScan(ctx context.Context, id int64) error
 }
 
 // FindingFilter narrows a ListFindingsByScan call to findings matching the
