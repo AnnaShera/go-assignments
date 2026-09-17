@@ -20,6 +20,11 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("failed to open database: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Errorf("close db: %v", err)
+		}
+	})
 
 	if err := db.Ping(); err != nil {
 		t.Fatalf("failed to ping database: %v", err)
@@ -41,7 +46,6 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestNewPostgresRepository_ListProjects_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -57,7 +61,6 @@ func TestNewPostgresRepository_ListProjects_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_CreateProject_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -79,7 +82,6 @@ func TestNewPostgresRepository_CreateProject_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_GetProjectByID_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	created, _ := repo.CreateProject(context.Background(), "Get Test")
@@ -99,7 +101,6 @@ func TestNewPostgresRepository_GetProjectByID_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteProject_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	created, _ := repo.CreateProject(context.Background(), "Delete Test")
@@ -119,7 +120,6 @@ func TestNewPostgresRepository_DeleteProject_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_CreateScan_ProjectNotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -132,7 +132,6 @@ func TestNewPostgresRepository_CreateScan_ProjectNotFound_Integration(t *testing
 
 func TestNewPostgresRepository_CreateFinding_ScanNotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	finding := domain.Finding{
@@ -153,7 +152,6 @@ func TestNewPostgresRepository_CreateFinding_ScanNotFound_Integration(t *testing
 
 func TestNewPostgresRepository_DeleteProject_CascadesToScansAndFindings_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Cascade Test")
@@ -190,7 +188,6 @@ func TestNewPostgresRepository_DeleteProject_CascadesToScansAndFindings_Integrat
 
 func TestNewPostgresRepository_DeleteScan_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Delete Scan Test")
@@ -213,7 +210,6 @@ func TestNewPostgresRepository_DeleteScan_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteScan_NotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
@@ -226,7 +222,6 @@ func TestNewPostgresRepository_DeleteScan_NotFound_Integration(t *testing.T) {
 
 func TestNewPostgresRepository_DeleteFinding_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 	project, err := repo.CreateProject(context.Background(), "Delete Finding Test")
@@ -320,7 +315,6 @@ func TestNewPostgresRepository_ListFindingsByScan_Filtering_Integration(t *testi
 
 func TestNewPostgresRepository_DeleteFinding_NotFound_Integration(t *testing.T) {
 	db := setupTestDB(t)
-	defer db.Close()
 
 	repo := NewPostgresRepository(db)
 
