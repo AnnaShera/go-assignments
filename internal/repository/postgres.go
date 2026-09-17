@@ -185,8 +185,13 @@ func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
 	return r.deleteByID(ctx, "DELETE FROM scans WHERE id = $1", "delete scan", id)
 }
 
-// ListFindingsByScan returns all findings for a scan.
-func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64) (_ []domain.Finding, err error) {
+// ListFindingsByScan returns findings for a scan, optionally narrowed by
+// filter.Severity and/or filter.Status.
+//
+// TODO(Red phase): filter is accepted to satisfy the FindingRepository
+// interface but not yet applied to the query; SQL-level filtering lands in
+// the Green phase.
+func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) (_ []domain.Finding, err error) {
 	rows, err := r.db.QueryContext(ctx,
 		"SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE scan_id = $1 ORDER BY id",
 		scanID)

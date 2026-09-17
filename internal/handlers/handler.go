@@ -353,6 +353,10 @@ type updateFindingStatusRequest struct {
 }
 
 // ListFindings handles GET /scans/{scanID}/findings.
+//
+// TODO(Red phase): always passes an empty FindingFilter, so the
+// ?severity=/?status= query params below are not yet read or validated;
+// that logic lands in the Green phase.
 func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 	scanID, err := parseID(r.PathValue("scanID"))
 	if err != nil {
@@ -360,7 +364,7 @@ func (h *Handler) ListFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID)
+	findings, err := h.repo.ListFindingsByScan(r.Context(), scanID, repository.FindingFilter{})
 	if err != nil {
 		h.writeError(w, err)
 		return

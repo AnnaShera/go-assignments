@@ -33,7 +33,12 @@ func (f *FakeFindingRepository) AddScan(scanID int64) {
 	f.validScanIDs[scanID] = true
 }
 
-func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID int64) ([]domain.Finding, error) {
+// ListFindingsByScan returns findings for scanID, optionally narrowed by
+// filter.Severity and/or filter.Status.
+//
+// TODO(Red phase): filter is accepted to satisfy the FindingRepository
+// interface but not yet applied; matching lands in the Green phase.
+func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) ([]domain.Finding, error) {
 	findings := []domain.Finding{}
 	for _, fd := range f.findings {
 		if fd.ScanID == scanID {
@@ -104,12 +109,22 @@ func newValidFinding(scanID int64) domain.Finding {
 	}
 }
 
+// findingWith returns a valid finding for scanID with the given severity
+// and status, for filter tests that need findings distinguishable along
+// those fields rather than newValidFinding's fixed high/open defaults.
+func findingWith(scanID int64, severity, status string) domain.Finding {
+	f := newValidFinding(scanID)
+	f.Severity = severity
+	f.Status = status
+	return f
+}
+
 // Test cases
 
 func TestListFindingsByScan_Empty(t *testing.T) {
 	repo := NewFakeFindingRepository()
 
-	findings, err := repo.ListFindingsByScan(context.Background(), 1)
+	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -136,7 +151,7 @@ func TestListFindingsByScan_ReturnsFindingsForScan(t *testing.T) {
 		t.Fatalf("setup: unexpected error: %v", err)
 	}
 
-	findings, err := repo.ListFindingsByScan(context.Background(), 1)
+	findings, err := repo.ListFindingsByScan(context.Background(), 1, FindingFilter{})
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -148,6 +163,83 @@ func TestListFindingsByScan_ReturnsFindingsForScan(t *testing.T) {
 		if fd.ScanID != 1 {
 			t.Errorf("expected only scan 1 findings, got finding for scan %d", fd.ScanID)
 		}
+	}
+}
+
+func TestListFindingsByScan_Filtering(t *testing.T) {
+	tests := []struct {
+		name         string
+		filter       FindingFilter
+		wantCount    int
+		wantSeverity string // "" = don't check
+		wantStatus   string // "" = don't check
+	}{
+		{
+			name:      "no filter returns all",
+			filter:    FindingFilter{},
+			wantCount: 3,
+		},
+		{
+			name:         "filter by severity only",
+			filter:       FindingFilter{Severity: domain.SeverityHigh},
+			wantCount:    2,
+			wantSeverity: domain.SeverityHigh,
+		},
+		{
+			name:       "filter by status only",
+			filter:     FindingFilter{Status: domain.StatusOpen},
+			wantCount:  2,
+			wantStatus: domain.StatusOpen,
+		},
+		{
+			name:         "filter by severity and status",
+			filter:       FindingFilter{Severity: domain.SeverityHigh, Status: domain.StatusOpen},
+			wantCount:    1,
+			wantSeverity: domain.SeverityHigh,
+			wantStatus:   domain.StatusOpen,
+		},
+		{
+			name:      "filter matches nothing returns empty slice not nil",
+			filter:    FindingFilter{Severity: domain.SeverityCritical},
+			wantCount: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := NewFakeFindingRepository()
+			repo.AddScan(1)
+			seed := []domain.Finding{
+				findingWith(1, domain.SeverityHigh, domain.StatusOpen),
+				findingWith(1, domain.SeverityHigh, domain.StatusResolved),
+				findingWith(1, domain.SeverityLow, domain.StatusOpen),
+			}
+			for _, fd := range seed {
+				if _, err := repo.CreateFinding(context.Background(), fd); err != nil {
+					t.Fatalf("setup: unexpected error: %v", err)
+				}
+			}
+
+			findings, err := repo.ListFindingsByScan(context.Background(), 1, tt.filter)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if findings == nil {
+				t.Error("expected non-nil slice even when empty")
+			}
+			if len(findings) != tt.wantCount {
+				t.Fatalf("expected %d findings, got %d", tt.wantCount, len(findings))
+			}
+			for _, fd := range findings {
+				if tt.wantSeverity != "" && fd.Severity != tt.wantSeverity {
+					t.Errorf("expected severity %q, got %q", tt.wantSeverity, fd.Severity)
+				}
+				if tt.wantStatus != "" && fd.Status != tt.wantStatus {
+					t.Errorf("expected status %q, got %q", tt.wantStatus, fd.Status)
+				}
+			}
+		})
 	}
 }
 
