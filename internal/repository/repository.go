@@ -21,6 +21,42 @@ type ScanRepository interface {
 	DeleteScan(ctx context.Context, id int64) error
 }
 
+// Default and cap for Pagination.Normalize: a page defaults to 50 rows
+// when the caller doesn't specify a limit, and is clamped to at most 200
+// rows even if the caller asks for more, so a single request can't be
+// used to pull an unbounded result set.
+const (
+	defaultPageLimit = 50
+	maxPageLimit     = 200
+)
+
+// Pagination narrows a List* call to a page of results via Limit and
+// Offset. It is deliberately its own type rather than folded into
+// FindingFilter: paging is an orthogonal concern from content filtering,
+// and every List* method needs it, not just ListFindingsByScan.
+type Pagination struct {
+	Limit  int
+	Offset int
+}
+
+// Normalize returns p with sensible bounds applied: a non-positive Limit
+// (including the zero value, so "no pagination given" just works) defaults
+// to defaultPageLimit, and a Limit above maxPageLimit is clamped down to
+// it rather than rejected — a common, low-friction API convention: an
+// over-eager client gets a smaller page instead of an error. Offset is
+// passed through unchanged; a negative offset is a client mistake the
+// handler layer rejects outright (see handlers.parsePagination) rather
+// than something to silently correct here.
+func (p Pagination) Normalize() Pagination {
+	switch {
+	case p.Limit <= 0:
+		p.Limit = defaultPageLimit
+	case p.Limit > maxPageLimit:
+		p.Limit = maxPageLimit
+	}
+	return p
+}
+
 // FindingFilter narrows a ListFindingsByScan call to findings matching the
 // given severity and/or status. An empty field means no filter on that
 // dimension; a zero-value FindingFilter matches everything, preserving the
