@@ -37,4 +37,20 @@ if [ $test_status -ne 0 ]; then
   exit 2
 fi
 
+lint_bin="$(go env GOPATH)/bin/golangci-lint.exe"
+
+if [ ! -x "$lint_bin" ]; then
+  echo "Push blocked, golangci-lint not found at $lint_bin:" >&2
+  exit 2
+fi
+
+lint_output=$("$lint_bin" run ./... 2>&1)
+lint_status=$?
+
+if [ $lint_status -ne 0 ]; then
+  echo "Push blocked, golangci-lint failed:" >&2
+  echo "$lint_output" >&2
+  exit 2
+fi
+
 exit 0
