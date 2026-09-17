@@ -35,15 +35,19 @@ func (f *FakeFindingRepository) AddScan(scanID int64) {
 
 // ListFindingsByScan returns findings for scanID, optionally narrowed by
 // filter.Severity and/or filter.Status.
-//
-// TODO(Red phase): filter is accepted to satisfy the FindingRepository
-// interface but not yet applied; matching lands in the Green phase.
 func (f *FakeFindingRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) ([]domain.Finding, error) {
 	findings := []domain.Finding{}
 	for _, fd := range f.findings {
-		if fd.ScanID == scanID {
-			findings = append(findings, fd)
+		if fd.ScanID != scanID {
+			continue
 		}
+		if filter.Severity != "" && fd.Severity != filter.Severity {
+			continue
+		}
+		if filter.Status != "" && fd.Status != filter.Status {
+			continue
+		}
+		findings = append(findings, fd)
 	}
 	return findings, nil
 }

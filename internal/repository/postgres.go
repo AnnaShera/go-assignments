@@ -186,15 +186,25 @@ func (r *pgRepository) DeleteScan(ctx context.Context, id int64) error {
 }
 
 // ListFindingsByScan returns findings for a scan, optionally narrowed by
-// filter.Severity and/or filter.Status.
-//
-// TODO(Red phase): filter is accepted to satisfy the FindingRepository
-// interface but not yet applied to the query; SQL-level filtering lands in
-// the Green phase.
+// filter.Severity and/or filter.Status. Each clause is appended only when
+// its filter field is non-empty; the compared value itself always travels
+// as a bound parameter ($2, $3, ...), never string-concatenated into the
+// query text.
 func (r *pgRepository) ListFindingsByScan(ctx context.Context, scanID int64, filter FindingFilter) (_ []domain.Finding, err error) {
-	rows, err := r.db.QueryContext(ctx,
-		"SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE scan_id = $1 ORDER BY id",
-		scanID)
+	query := "SELECT id, scan_id, title, severity, status, file_path, line_number, created_at FROM findings WHERE scan_id = $1"
+	args := []any{scanID}
+
+	if filter.Severity != "" {
+		args = append(args, filter.Severity)
+		query += fmt.Sprintf(" AND severity = $%d", len(args))
+	}
+	if filter.Status != "" {
+		args = append(args, filter.Status)
+		query += fmt.Sprintf(" AND status = $%d", len(args))
+	}
+	query += " ORDER BY id"
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list findings: %w", err)
 	}
