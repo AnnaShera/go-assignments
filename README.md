@@ -128,3 +128,21 @@ See [`STANDARDS.md`](STANDARDS.md) for:
 - Code quality gates enforced by hooks (gofmt, go test, golangci-lint)
 
 Every assignment decision should be logged in `docs/DECISIONS.md` with rationale from this reference.
+
+### Recommended Assignment Workflow
+
+1. **Start** → `/new-go-assignment` — Guided intake, standards review, design, TDD implementation, debrief
+   
+2. **During implementation** → Regular commits after each Green or Refactor phase
+   - Hooks automatically check: `gofmt`, `go test`, `golangci-lint`
+   - Push blocked if any of these fail
+
+3. **Before submitting** → Run skills in this order:
+   - **`/security-review-checklist`** — Catch security issues (OWASP, injection, auth)
+   - **`/code-review`** — Find bugs, simplification opportunities, efficiency gains
+   - **`/go-interviewer-review`** — Comprehensive assessment across 8 dimensions with senior-level verdict
+   - **`/grill-me`** — Practice interview questions about your implementation
+
+4. **After review feedback** → Fix issues, commit, push when hooks pass
+
+**Why manual skills?** Code reviews benefit from your intent and context. Automated gates should only enforce mechanical rules (formatting, tests, linting) — human judgment decides if code is good enough to ship.
