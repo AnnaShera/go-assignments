@@ -198,6 +198,19 @@ func TestCreateProject_ValidatesName(t *testing.T) {
 	}
 }
 
+func TestCreateProject_TrimsNameWhitespace(t *testing.T) {
+	repo := NewFakeProjectRepository()
+
+	project, err := repo.CreateProject(context.Background(), "  My Project  ")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if project.Name != "My Project" {
+		t.Errorf("expected trimmed name 'My Project', got '%s'", project.Name)
+	}
+}
+
 func TestCreateProject_ReturnsProjectWithID(t *testing.T) {
 	repo := NewFakeProjectRepository()
 
