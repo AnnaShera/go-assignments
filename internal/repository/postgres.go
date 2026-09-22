@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgconn"
 
@@ -70,16 +71,18 @@ func (r *pgRepository) GetProjectByID(ctx context.Context, id int64) (domain.Pro
 	return p, nil
 }
 
-// CreateProject inserts a new project and returns it with ID set.
+// CreateProject inserts a new project and returns it with ID set. name is
+// trimmed of surrounding whitespace before validation and persistence, so
+// "  Foo  " and "Foo" are stored identically rather than as distinct values.
 func (r *pgRepository) CreateProject(ctx context.Context, name string) (domain.Project, error) {
-	p := domain.Project{Name: name}
+	p := domain.Project{Name: strings.TrimSpace(name)}
 	if err := p.Validate(); err != nil {
 		return domain.Project{}, err
 	}
 
 	err := r.db.QueryRowContext(ctx,
 		"INSERT INTO projects (name) VALUES ($1) RETURNING id, created_at",
-		name).Scan(&p.ID, &p.CreatedAt)
+		p.Name).Scan(&p.ID, &p.CreatedAt)
 
 	if err != nil {
 		return domain.Project{}, fmt.Errorf("create project: %w", err)
@@ -164,16 +167,17 @@ func (r *pgRepository) GetScanByID(ctx context.Context, id int64) (domain.Scan, 
 	return s, nil
 }
 
-// CreateScan inserts a new scan.
+// CreateScan inserts a new scan. tool is trimmed of surrounding whitespace
+// before validation and persistence (see CreateProject).
 func (r *pgRepository) CreateScan(ctx context.Context, projectID int64, tool string) (domain.Scan, error) {
-	s := domain.Scan{ProjectID: projectID, Tool: tool}
+	s := domain.Scan{ProjectID: projectID, Tool: strings.TrimSpace(tool)}
 	if err := s.Validate(); err != nil {
 		return domain.Scan{}, err
 	}
 
 	err := r.db.QueryRowContext(ctx,
 		"INSERT INTO scans (project_id, tool) VALUES ($1, $2) RETURNING id, started_at",
-		projectID, tool).Scan(&s.ID, &s.StartedAt)
+		projectID, s.Tool).Scan(&s.ID, &s.StartedAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -261,8 +265,12 @@ func (r *pgRepository) GetFindingByID(ctx context.Context, id int64) (domain.Fin
 	return f, nil
 }
 
-// CreateFinding inserts a new finding.
+// CreateFinding inserts a new finding. Title and FilePath are trimmed of
+// surrounding whitespace before validation and persistence (see
+// CreateProject).
 func (r *pgRepository) CreateFinding(ctx context.Context, finding domain.Finding) (domain.Finding, error) {
+	finding.Title = strings.TrimSpace(finding.Title)
+	finding.FilePath = strings.TrimSpace(finding.FilePath)
 	if err := finding.Validate(); err != nil {
 		return domain.Finding{}, err
 	}

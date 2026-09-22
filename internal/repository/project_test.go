@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func (f *FakeProjectRepository) GetProjectByID(ctx context.Context, id int64) (d
 func (f *FakeProjectRepository) CreateProject(ctx context.Context, name string) (domain.Project, error) {
 	p := domain.Project{
 		ID:        f.nextID,
-		Name:      name,
+		Name:      strings.TrimSpace(name),
 		CreatedAt: time.Now(),
 	}
 	if err := p.Validate(); err != nil {
