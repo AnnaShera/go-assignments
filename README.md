@@ -52,9 +52,10 @@ go-assignments/
 ├── README.md — This file
 ├── .claude/skills/ — Assignment skills
 ├── .gitignore — Go project exclusions
-├── vuln-findings-api/ — Example: REST API with Postgres
-├── your-assignment/ — Next assignment
-└── ...
+└── assignments/
+    ├── vuln-findings-api/ — Example: REST API with Postgres
+    ├── your-assignment/ — Next assignment
+    └── ...
 ```
 
 ## Standards & Decision Framework
