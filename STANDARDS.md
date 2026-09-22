@@ -109,8 +109,6 @@ Don't build a validation abstraction for a single check.
 
 ## HTTP Routing / Web Framework
 
-*(Not in the original Python doc, added because your assignments default to REST API.)*
-
 ### Options
 
 #### 1. `net/http` stdlib only (with 1.22+ method+path patterns)
@@ -163,8 +161,6 @@ statements.
 
 ## Database Access
 
-*(Not in the original Python doc, added because Postgres is a confirmed dependency.)*
-
 ### Options
 
 #### 1. `database/sql` + `pgx` driver, hand-written SQL
@@ -191,7 +187,7 @@ statements.
 
 **Default:** `golang-migrate`, versioned SQL files (`0001_init.sql`, `0002_...sql`), matching what you've already started. Simple CLI, works cleanly with `docker-compose` startup, no need to justify it in an interview since it's the de facto standard.
 
-## Concurrency (replaces Async vs Sync)
+## Concurrency
 
 ### Options
 
@@ -271,10 +267,4 @@ statements.
 
 ---
 
-## Folded from test-scanner (now part of the review skill, not a separate check here)
-
-When reviewing a test suite, flag:
-- Low-value tests (asserting trivial getters, tautological assertions)
-- Gaps in critical-path coverage (happy path only, no error branches tested)
-- Consolidation opportunities (near-duplicate tests that should be one table-driven test)
-- Mocking practices (over-mocking simple logic, mocks that could drift from real behavior)
+**Default approach:** Log decisions in per-assignment `docs/DECISIONS.md` after confirming context-appropriate choices from this reference. When in doubt, prefer idiomatic Go and explicit code over clever abstractions.
