@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func (f *FakeProjectRepository) GetProjectByID(ctx context.Context, id int64) (d
 func (f *FakeProjectRepository) CreateProject(ctx context.Context, name string) (domain.Project, error) {
 	p := domain.Project{
 		ID:        f.nextID,
-		Name:      name,
+		Name:      strings.TrimSpace(name),
 		CreatedAt: time.Now(),
 	}
 	if err := p.Validate(); err != nil {
@@ -195,6 +196,19 @@ func TestCreateProject_ValidatesName(t *testing.T) {
 
 	if err != domain.ErrProjectNameRequired {
 		t.Errorf("expected ErrProjectNameRequired, got %v", err)
+	}
+}
+
+func TestCreateProject_TrimsNameWhitespace(t *testing.T) {
+	repo := NewFakeProjectRepository()
+
+	project, err := repo.CreateProject(context.Background(), "  My Project  ")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if project.Name != "My Project" {
+		t.Errorf("expected trimmed name 'My Project', got '%s'", project.Name)
 	}
 }
 

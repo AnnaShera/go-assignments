@@ -80,6 +80,56 @@ func TestNewPostgresRepository_CreateProject_Integration(t *testing.T) {
 	}
 }
 
+func TestNewPostgresRepository_TrimsWhitespaceBeforePersisting_Integration(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewPostgresRepository(db)
+	ctx := context.Background()
+
+	project, err := repo.CreateProject(ctx, "  Padded Project  ")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if project.Name != "Padded Project" {
+		t.Errorf("expected trimmed project name 'Padded Project', got %q", project.Name)
+	}
+
+	scan, err := repo.CreateScan(ctx, project.ID, "  nmap  ")
+	if err != nil {
+		t.Fatalf("create scan: %v", err)
+	}
+	if scan.Tool != "nmap" {
+		t.Errorf("expected trimmed tool 'nmap', got %q", scan.Tool)
+	}
+
+	finding, err := repo.CreateFinding(ctx, domain.Finding{
+		ScanID:     scan.ID,
+		Title:      "  Padded Title  ",
+		Severity:   domain.SeverityLow,
+		Status:     domain.StatusOpen,
+		FilePath:   "  path/to/file.go  ",
+		LineNumber: 1,
+	})
+	if err != nil {
+		t.Fatalf("create finding: %v", err)
+	}
+	if finding.Title != "Padded Title" {
+		t.Errorf("expected trimmed title 'Padded Title', got %q", finding.Title)
+	}
+	if finding.FilePath != "path/to/file.go" {
+		t.Errorf("expected trimmed file path 'path/to/file.go', got %q", finding.FilePath)
+	}
+
+	// Re-fetch to confirm the trimmed value is what's actually persisted,
+	// not just what the Create* call happens to return.
+	reloaded, err := repo.GetProjectByID(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if reloaded.Name != "Padded Project" {
+		t.Errorf("expected persisted trimmed name 'Padded Project', got %q", reloaded.Name)
+	}
+}
+
 func TestNewPostgresRepository_GetProjectByID_Integration(t *testing.T) {
 	db := setupTestDB(t)
 

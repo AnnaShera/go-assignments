@@ -25,14 +25,8 @@ func (f Finding) Validate() error {
 	if strings.TrimSpace(f.Title) == "" {
 		return ErrTitleRequired
 	}
-	if f.Severity == "" {
-		return ErrInvalidSeverity
-	}
 	if !IsValidSeverity(f.Severity) {
 		return ErrInvalidSeverity
-	}
-	if f.Status == "" {
-		return ErrInvalidStatus
 	}
 	if !IsValidStatus(f.Status) {
 		return ErrInvalidStatus
