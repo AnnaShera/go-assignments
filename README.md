@@ -92,3 +92,39 @@ projects, scans, and findings — is complete.
    go run ./cmd/api
    ```
    Listens on `:8080`.
+
+## Home Assignment Workflow
+
+This repository is set up for TDD-based home assignments with guided phases and skill support.
+
+### Available Skills
+
+**`/new-go-assignment`** — Orchestrates a complete Go assignment from intake through debrief:
+- **Intake** — Read the assignment, extract requirements, document questions and edge cases
+- **Standards Review** — Pick technical decisions from `STANDARDS.md`, log reasoning
+- **Design** — Define package layout, exported signatures, implementation checklist
+- **TDD Implementation** — Red → Green → Refactor with explicit checkpoints and commits after each phase
+- **Debrief** — Document tradeoffs, lessons learned, what you'd do differently
+
+Stop-and-wait approval gates between phases ensure deliberate progress.
+
+**`/go-interviewer-review`** — Comprehensive code review across 8 dimensions:
+- Error handling, code clarity, package design, test quality, Go idioms, correctness, performance, requirements met
+- Scores each 0–10 with actionable feedback and a senior-level verdict
+- Use after implementation is complete, before the debrief
+
+**`/go-tests-scanner`** — Evaluates test suite quality:
+- Identifies low-value tests, coverage gaps, redundancy opportunities, and mocking issues
+- Outputs a signal-to-noise ratio and prioritized improvement recommendations
+- Helps you write tests that actually catch bugs, not just hit a coverage percentage
+
+### Standards & Decision Framework
+
+See [`STANDARDS.md`](STANDARDS.md) for:
+- Universal questions checklist for project intake
+- Error handling patterns (sentinel vs custom types vs wrapped errors)
+- Data modeling and validation approaches
+- HTTP routing, database access, testing patterns
+- Code quality gates enforced by hooks (gofmt, go test, golangci-lint)
+
+Every assignment decision should be logged in `docs/DECISIONS.md` with rationale from this reference.
