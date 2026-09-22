@@ -60,7 +60,7 @@ for this API's small JSON payloads. A body over the limit returns
 - **Postgres**, run via Docker Compose
 - Manual testing with Postman (no automated API client yet)
 
-See [`../../STANDARDS.md`](../../STANDARDS.md) for the full set of technical
+See [`../STANDARDS.md`](../STANDARDS.md) for the full set of technical
 defaults and tradeoffs this project follows.
 
 ## Status

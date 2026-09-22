@@ -46,16 +46,15 @@ Push is blocked by hooks until:
 ## Repository structure
 
 ```
-assignments/
+go-assignments/
 ├── CLAUDE.md — TDD discipline and conventions
 ├── STANDARDS.md — Go decision reference (error handling, HTTP, database, etc.)
 ├── README.md — This file
 ├── .claude/skills/ — Assignment skills
 ├── .gitignore — Go project exclusions
-└── assignments/
-    ├── vuln-findings-api/ — Example: REST API with Postgres
-    ├── your-assignment/ — Next assignment
-    └── ...
+├── vuln-findings-api/ — Example: REST API with Postgres
+├── your-assignment/ — Next assignment
+└── ...
 ```
 
 ## Standards & Decision Framework
