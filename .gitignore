@@ -1,7 +1,30 @@
 .env
+.env.local
 
 # Go build artifacts
 /bin/
 *.exe
 *.test
 *.out
+*.so
+*.dylib
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Database and local files
+*.db
+*.sqlite
+*.sqlite3
+
+# Assignment-specific
+assignments/*/bin/
+assignments/*/.env
+
+# Vendor (if used)
+vendor/
