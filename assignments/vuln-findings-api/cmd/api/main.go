@@ -19,8 +19,8 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/handlers"
-	"github.com/AnnaShera/vuln-findings-api/internal/repository"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/handlers"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/repository"
 )
 
 func main() {

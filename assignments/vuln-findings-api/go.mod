@@ -1,4 +1,4 @@
-module github.com/AnnaShera/vuln-findings-api
+module github.com/AnnaShera/go-assignments/assignments/vuln-findings-api
 
 go 1.26.5
 

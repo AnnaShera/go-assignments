@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
 )
 
 // pgRepository implements Repository using Postgres.

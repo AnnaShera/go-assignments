@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
 )
 
 // Default and cap for Pagination.Normalize: a page defaults to 50 rows

@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
-	"github.com/AnnaShera/vuln-findings-api/internal/repository"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/repository"
 )
 
 // Error codes returned in the JSON error envelope. Clients should branch on

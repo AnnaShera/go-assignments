@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
 )
 
 // FakeProjectRepository is a test double for unit testing.

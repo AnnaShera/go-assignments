@@ -11,7 +11,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
 )
 
 func setupTestDB(t *testing.T) *sql.DB {

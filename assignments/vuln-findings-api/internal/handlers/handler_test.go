@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AnnaShera/vuln-findings-api/internal/domain"
-	"github.com/AnnaShera/vuln-findings-api/internal/repository"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/domain"
+	"github.com/AnnaShera/go-assignments/assignments/vuln-findings-api/internal/repository"
 )
 
 // paginateByID sorts items by ID ascending, mirroring the real
