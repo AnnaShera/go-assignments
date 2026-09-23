@@ -28,15 +28,6 @@ if [ -n "$unformatted" ]; then
   exit 2
 fi
 
-test_output=$(go test ./... 2>&1)
-test_status=$?
-
-if [ $test_status -ne 0 ]; then
-  echo "Push blocked, go test failed:" >&2
-  echo "$test_output" >&2
-  exit 2
-fi
-
 lint_bin="$(go env GOPATH)/bin/golangci-lint.exe"
 
 if [ ! -x "$lint_bin" ]; then
@@ -44,22 +35,38 @@ if [ ! -x "$lint_bin" ]; then
   exit 2
 fi
 
-lint_output=$("$lint_bin" run ./... 2>&1)
-lint_status=$?
+# Each assignment is its own Go module (assignments/*/go.mod), so there is
+# no single root module for `go test ./...` / lint to run against. Run each
+# check per-module instead.
+while IFS= read -r modfile; do
+  moddir=$(dirname "$modfile")
 
-if [ $lint_status -ne 0 ]; then
-  echo "Push blocked, golangci-lint failed:" >&2
-  echo "$lint_output" >&2
-  exit 2
-fi
+  test_output=$(cd "$moddir" && go test ./... 2>&1)
+  test_status=$?
 
-lint_integration_output=$("$lint_bin" run --build-tags=integration ./... 2>&1)
-lint_integration_status=$?
+  if [ $test_status -ne 0 ]; then
+    echo "Push blocked, go test failed in $moddir:" >&2
+    echo "$test_output" >&2
+    exit 2
+  fi
 
-if [ $lint_integration_status -ne 0 ]; then
-  echo "Push blocked, golangci-lint failed (-tags=integration):" >&2
-  echo "$lint_integration_output" >&2
-  exit 2
-fi
+  lint_output=$(cd "$moddir" && "$lint_bin" run ./... 2>&1)
+  lint_status=$?
+
+  if [ $lint_status -ne 0 ]; then
+    echo "Push blocked, golangci-lint failed in $moddir:" >&2
+    echo "$lint_output" >&2
+    exit 2
+  fi
+
+  lint_integration_output=$(cd "$moddir" && "$lint_bin" run --build-tags=integration ./... 2>&1)
+  lint_integration_status=$?
+
+  if [ $lint_integration_status -ne 0 ]; then
+    echo "Push blocked, golangci-lint failed in $moddir (-tags=integration):" >&2
+    echo "$lint_integration_output" >&2
+    exit 2
+  fi
+done < <(find . -maxdepth 3 -name go.mod)
 
 exit 0
