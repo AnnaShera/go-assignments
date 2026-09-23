@@ -26,7 +26,6 @@ The skill guides you through five phases:
 
 ## Available skills
 
-- **`/new-go-assignment`** — Scaffolds and guides a complete assignment end-to-end
 - **`/security-review-checklist`** — Security audit against OWASP Top 10, OWASP LLM Top 10, OWASP API Security Top 10
 - **`/code-review`** — Bug and simplification detection
 - **`/go-interviewer-review`** — 8-dimension code assessment with senior-level verdict
