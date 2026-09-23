@@ -5,7 +5,34 @@ this repo" choices unless the assignment gives a specific reason to deviate.
 
 Pushes are automatically gated by a `.claude/settings.json` hook —
 `.claude/hooks/pre-push-check.sh` blocks on `gofmt`, `go test`, and
-`golangci-lint` failures.
+`golangci-lint` failures, checked separately in each module under
+`assignments/*/`.
+
+## Repo Layout & Conventions
+
+- Every assignment lives in its own folder, `assignments/<name>/`, and is
+  its own Go module. There is no root `go.mod`, so run Go commands from
+  inside the assignment folder.
+- Module path: `github.com/AnnaShera/go-assignments/assignments/<name>`.
+- Inside an assignment: `cmd/<binary>/main.go` for entry points,
+  `internal/<package>/` for everything else, `migrations/` if there is a
+  database, `docs/` for the workflow files.
+- Workflow docs go in `assignments/<name>/docs/`, never in the repo root.
+- When a new assignment is created, add a row for it to the Assignments
+  table in `README.md`.
+
+## Commands
+
+Run these from `assignments/<name>/`:
+
+| Purpose | Command |
+|---|---|
+| Unit tests | `go test ./...` |
+| Vet | `go vet ./...` |
+| Lint | `golangci-lint run ./...` |
+| Lint integration code | `golangci-lint run --build-tags=integration ./...` |
+| Integration tests | `docker compose up -d`, then `go test -tags=integration ./...` |
+| Format (repo-wide, from root) | `gofmt -l .` to check, `gofmt -w .` to fix |
 
 ## TDD Discipline
 
@@ -50,22 +77,27 @@ Pushes are automatically gated by a `.claude/settings.json` hook —
 - Self-explanatory naming reduces the need for comments. A function called
   `calc` needs a comment; a function called `totalWithTax` doesn't.
 
-## Testing Strategy for This Stack
+## Testing Strategy
 
-- **Unit tests** for business logic (validation, status transitions, anything
-  not touching the database) use fakes/interfaces. No real DB dependency,
-  fast, part of the normal Red-Green-Refactor loop.
-- **Integration tests** for the database layer (queries, foreign key and
-  cascade delete behavior, transactions) run against a real Postgres
-  instance via `docker-compose`, not a mock. A mocked DB won't catch a
-  cascade delete that's wired wrong, only a real one will.
-- Integration tests are a separate, slower test group (build tag or
-  `_integration_test.go` suffix), not mixed into the fast unit suite.
-  `docker-compose up` must be running before they're runnable.
+- **Unit tests** cover business logic: validation, state transitions,
+  anything that doesn't touch an external dependency. They use small
+  interfaces and hand-written fakes, run in milliseconds, and are part of
+  the normal Red → Green → Refactor loop.
+- **Integration tests** cover the edges where the real dependency's behavior
+  matters: queries, constraints, transactions, cascade deletes, wire
+  formats. They run against the real thing (e.g. Postgres via
+  `docker compose`), not a mock. A mock only confirms what you already
+  believe the dependency does.
+- Integration tests are a separate, slower group behind the `integration`
+  build tag (`//go:build integration`), never mixed into the fast unit
+  suite. The dependency must be running before they're runnable.
+- HTTP handlers are tested with `httptest`, through the real router, so
+  routing, status codes, and the JSON error envelope are covered too.
 
 ## Structured Workflow
 
-Complex assignments use the `/new-go-assignment` skill, which orchestrates:
+Complex assignments use the `/new-go-assignment` skill, which orchestrates
+the phases below. Every `docs/` path means `assignments/<name>/docs/`.
 
 1. **Intake** — read the assignment, fill `docs/QUESTIONS.md` from the
    Universal Questions Checklist in `STANDARDS.md`, get answers before

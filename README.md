@@ -16,9 +16,28 @@ The goal is a **repeatable process that holds up under interview time pressure**
 
 ## Assignments
 
-| Assignment | What it is | Read first |
+| Assignment | What it is | Status |
 |---|---|---|
-| [vuln-findings-api](assignments/vuln-findings-api) | REST API for vulnerability findings, backed by Postgres | `docs/DEBRIEF.md` |
+| [vuln-findings-api](assignments/vuln-findings-api) | REST API for vulnerability findings, backed by Postgres | In progress. Built before the workflow existed, so there is no `docs/` yet |
+
+## Getting started
+
+**Prerequisites**
+
+- Go 1.26+
+- [golangci-lint](https://golangci-lint.run/) v2 (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`)
+- Docker (only needed for integration tests)
+- [Claude Code](https://claude.com/claude-code), for the skills and the push gate
+
+**Run an assignment's checks**
+
+```bash
+cd assignments/<name>
+go test ./...                                  # unit tests
+golangci-lint run ./...                        # lint
+docker compose up -d                           # only if the assignment has integration tests
+go test -tags=integration ./...                # integration tests against the real dependency
+```
 
 ## How an assignment runs
 
@@ -32,22 +51,23 @@ Start with `/new-go-assignment`. It moves the assignment through five phases:
 
 Before submitting, run the review skills in the order given in [`WORKFLOW.md`](WORKFLOW.md).
 
-## Review skills
+## Skills
 
-- **`/code-review`:** bugs and simplification opportunities.
+These ship with the repo in `.claude/skills/`:
+
+- **`/new-go-assignment`:** runs the five phases above.
 - **`/go-tests-scanner`:** test suite quality and signal-to-noise ratio.
-- **`/security-review-checklist`:** audit against OWASP Top 10, OWASP API Security Top 10, and OWASP LLM Top 10.
 - **`/go-interviewer-review`:** 8-dimension scoring with a senior-level verdict.
-- **`/grill-me`:** interview-style stress test of a plan or design.
-- **`/pair-explainer`:** step-by-step explanation of every code chunk while writing.
+
+Also used: **`/code-review`** (bugs and simplification opportunities), from Anthropic's official `code-review` Claude Code plugin.
 
 ## Quality gate
 
-`.claude/hooks/pre-push-check.sh` runs for **each module under `assignments/*/`**. A push is blocked unless:
+`.claude/hooks/pre-push-check.sh` runs whenever Claude Code runs `git push`. A push is blocked unless:
 
-- `gofmt` reports no unformatted files
-- `go test ./...` passes
-- `golangci-lint` is clean
+- `gofmt` reports no unformatted files anywhere in the repo
+- `go test ./...` passes in each module under `assignments/*/`
+- `golangci-lint` is clean in each module, both with and without the `integration` build tag
 
 ## Repository layout
 

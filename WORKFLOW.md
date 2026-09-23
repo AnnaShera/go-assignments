@@ -59,15 +59,14 @@ This document describes the complete flow of a Go assignment from start to finis
    │                                         │
    │ Red → Green → Refactor cycles           │
    │                                         │
-   │ Each commit checked against:            │
-   │ • CLAUDE.md (gofmt, go test, lint)     │
-   │ • STANDARDS.md (for patterns)          │
+   │ Commit after every Green and Refactor.  │
+   │ Every push gated by the pre-push hook:  │
+   │ • gofmt, go test, golangci-lint         │
    │                                         │
-   │ STOPS AFTER:                            │
+   │ STOPS AFTER (practice mode only):       │
    │ • Test skeleton written (Red)           │
-   │ • First test passes (Green)             │
+   │ • First test group passes (Green)       │
    │ • Each package complete                 │
-   │ • All tests + linting pass              │
    │                                         │
    │ Creates: Implementation code            │
    └────────────┬────────────────────────────┘
@@ -82,13 +81,17 @@ This document describes the complete flow of a Go assignment from start to finis
    └────────────┬────────────┘
                 │
                 ▼
-        ┌──────────────────────────────┐
-        │ SUBMISSION READINESS CHECKS  │
-        │                              │
-        │ Run in order:                │
-        │ 1. /security-review-check   │
-        │ 2. /code-review             │
-        │ 3. /go-interviewer-review   │
-        │ 4. /grill-me                │
-        └──────────────────────────────┘
+        ┌─────────────────────────────────────┐
+        │ SUBMISSION READINESS CHECKS         │
+        │                                     │
+        │ Run in order:                       │
+        │ 1. /code-review       (correctness) │
+        │ 2. /go-tests-scanner  (test signal) │
+        │ 3. integration tests + go test -race│
+        │    (by hand; the gate skips both)   │
+        │ 4. /go-interviewer-review  (score)  │
+        └─────────────────────────────────────┘
 ```
+
+Fix correctness first, then test quality, then score, so the interviewer
+review grades the final code rather than code that's about to change.

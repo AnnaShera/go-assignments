@@ -36,6 +36,42 @@ Always include applicable questions from this list in `docs/QUESTIONS.md` during
 - Is there an exact output format required (JSON field names, status codes, sorting)?
 - Should errors be surfaced to the caller (HTTP status + body) or logged only?
 
+### API Surface (HTTP assignments)
+- Is authentication or authorization expected, or explicitly out of scope?
+- Do list endpoints need pagination, filtering, or sorting? What happens with a very large result?
+- Must any write be idempotent (e.g. a retried POST must not create duplicates)?
+- Is there an API versioning expectation (`/v1/...`)?
+
+### Scope & Delivery
+- What is the time budget, and what matters most if it runs out?
+- What exactly does the reviewer receive: repo link, Dockerfile, run instructions, a demo?
+- How will the reviewer run it (plain `go run`, `docker compose up`, a specific Go version)?
+- Which external dependencies are allowed, if any?
+
+---
+
+## Project Layout
+
+**Default for this repo:**
+
+```
+assignments/<name>/
+├── cmd/<binary>/main.go   wiring only: config, dependencies, server start/stop
+├── internal/<package>/    all application code; not importable from outside the module
+├── migrations/            versioned SQL, if there is a database
+├── docs/                  QUESTIONS, DECISIONS, DESIGN, DEBRIEF
+└── go.mod                 module github.com/AnnaShera/go-assignments/assignments/<name>
+```
+
+- `main.go` wires things together and holds no business logic, so everything
+  worth testing lives in `internal/`.
+- Name packages after what they provide (`handlers`, `repository`, `domain`),
+  never `utils`, `common`, or `helpers`.
+- Don't create a package for a single small type. Split when a package
+  starts doing two jobs, not before.
+- Skip `pkg/`. For a single-module assignment it adds a level of nesting and
+  says nothing.
+
 ---
 
 ## Error Handling
@@ -133,13 +169,55 @@ Don't build a validation abstraction for a single check.
 
 ---
 
+## HTTP Server Hardening
+
+A bare `http.ListenAndServe(addr, mux)` has no timeouts, so one slow client
+can hold a connection forever. `gosec` flags it, and reviewers do too.
+
+**Default for this repo:**
+
+- Build an explicit `http.Server` with `ReadHeaderTimeout`, `ReadTimeout`,
+  `WriteTimeout`, and `IdleTimeout` set.
+- Cap request bodies with `http.MaxBytesReader` before decoding JSON.
+- Decode with `json.NewDecoder(r.Body)` and call `DisallowUnknownFields()`
+  when the contract is strict, so a typoed field fails loudly instead of
+  being silently ignored.
+- Shut down gracefully: `signal.NotifyContext` for SIGINT/SIGTERM, then
+  `server.Shutdown(ctx)` with a timeout so in-flight requests finish.
+- Expose `GET /healthz` returning `200` once the server is ready, and
+  check the DB connection if there is one.
+
+---
+
+## API Design
+
+**Default for this repo:**
+
+- **Status codes:** `201 Created` with the created resource (and a
+  `Location` header) for POSTs that create, `200` for reads and updates,
+  `204 No Content` for deletes, `400` for validation, `404` for not found,
+  `409` for conflicts, `500` for anything unexpected.
+- **Pagination:** any list endpoint that can grow is paginated from day one
+  (`?limit=&offset=` is fine for an assignment; cursor-based if the brief
+  mentions large data). Enforce a max `limit`.
+- **JSON naming:** `snake_case` field names, consistent across every
+  endpoint. Timestamps as RFC 3339 in UTC.
+- **Idempotency:** PUT and DELETE are idempotent by definition. If a POST
+  must be safe to retry, say how in `docs/DECISIONS.md` (idempotency key or
+  a natural unique constraint).
+- **Versioning:** no `/v1` prefix unless the brief asks for it. Mention in
+  DECISIONS where it would go.
+
+---
+
 ## Authentication & Authorization
 
-**Default for this repo:** no auth implemented (out of scope for CRUD practice), but
+**Default for this repo:** no auth implemented unless the brief asks for it, but
 document the decision explicitly in `docs/DECISIONS.md`: where JWT middleware would
 sit (before the handler, via `net/http` middleware chaining), and which endpoints
-would need role checks (e.g. DELETE on Project). An interviewer will ask "how would
-you secure this" — having the answer ready is the point, not building it.
+would need role checks (typically destructive deletes and admin-only writes). An
+interviewer will ask "how would you secure this" — having the answer ready is the
+point, not building it.
 
 ---
 
@@ -159,6 +237,24 @@ statements.
 
 ---
 
+## Configuration
+
+**Default for this repo:**
+
+- Read config from environment variables, once, in `main`, into a typed
+  `Config` struct. Pass values down explicitly. No package reads `os.Getenv`
+  on its own.
+- Fail fast: a missing required variable stops startup with a clear error
+  instead of surfacing later as a confusing connection failure.
+- Defaults only for values that are safe to default (port, timeouts), never
+  for credentials.
+- Commit a `.env.example` per assignment listing every variable with dummy
+  values. The real `.env` stays gitignored.
+- No config library (`viper`, `envconfig`) unless there are enough variables
+  that parsing by hand gets noisy.
+
+---
+
 ## Database Access
 
 ### Options
@@ -170,7 +266,7 @@ statements.
 **Cons:** manual `Scan()` into each struct field, manual transaction handling (`Begin`/`Commit`/`Rollback`)
 
 #### 2. `sqlx`
-**Best for:** reducing struct-scanning boilerplate once you have three linked resources (Project → Scan → Finding) each needing row-to-struct mapping
+**Best for:** reducing struct-scanning boilerplate once row-to-struct mapping repeats across several resources
 
 **Pros:** `StructScan`/`Get`/`Select` convenience on top of the same raw SQL, still fully explainable, thin enough to justify in seconds if asked
 **Cons:** external dependency
@@ -179,13 +275,15 @@ statements.
 **Best for:** rarely, for an interview assignment
 
 **Pros:** less code to write
-**Cons:** hides the SQL and the relations/cascade behavior behind magic, directly undercuts a reviewer's ability to see you understand foreign keys and cascade deletes, which your schema already uses
+**Cons:** hides the SQL and the relations/cascade behavior behind magic, which directly undercuts a reviewer's ability to see that you understand foreign keys, constraints, and cascade deletes
 
-**Default for this repo:** `database/sql` + `pgx`. Move to `sqlx` only if scanning across the three linked resources gets genuinely repetitive, don't reach for it preemptively.
+**Default for this repo:** `database/sql` + `pgx`. Move to `sqlx` only if scanning across resources gets genuinely repetitive, don't reach for it preemptively.
 
 ### Migrations
 
-**Default:** `golang-migrate`, versioned SQL files (`0001_init.sql`, `0002_...sql`), matching what you've already started. Simple CLI, works cleanly with `docker-compose` startup, no need to justify it in an interview since it's the de facto standard.
+**Default:** `golang-migrate`, versioned SQL files (`0001_init.sql`, `0002_...sql`). Simple CLI, works cleanly with `docker compose` startup, no need to justify it in an interview since it's the de facto standard.
+
+---
 
 ## Concurrency
 
@@ -264,6 +362,44 @@ statements.
 **Cons:** for large interfaces, consider `gomock`/`mockgen` instead of hand-writing every fake
 
 **Default for this repo:** table-driven tests everywhere, `httptest` for handlers, stdlib assertions unless the struct comparisons get unwieldy (then `testify/assert`), hand-written fakes over a mocking framework unless the interface is large.
+
+---
+
+## Dependency Policy
+
+**Default for this repo:** stdlib first. Every third-party module in `go.mod`
+gets one line in `docs/DECISIONS.md` saying what it replaces and why the
+stdlib wasn't enough. "It's popular" isn't a reason; "hand-rolling this would
+be 200 lines of error-prone code" is.
+
+Pre-approved when the need is real: `pgx` (Postgres driver), `golang-migrate`
+(migrations), `testify` (assertions, only if comparisons get unwieldy).
+
+---
+
+## Tooling & Quality Gates
+
+The gate is enforced by `.claude/hooks/pre-push-check.sh`, which runs whenever
+Claude Code runs `git push`. Keep this section and the hook in sync.
+
+| Check | Scope | Blocks push |
+|---|---|---|
+| `gofmt -l .` | whole repo | yes |
+| `go test ./...` | each module under `assignments/*/` | yes |
+| `golangci-lint run ./...` | each module | yes |
+| `golangci-lint run --build-tags=integration ./...` | each module | yes |
+
+Known gaps, deliberately left for now:
+
+- **No `-race`.** The race detector needs cgo, which this Windows machine
+  doesn't have set up. Run `go test -race ./...` on Linux or in CI before
+  submitting anything concurrent.
+- **Integration tests are linted but not run** by the gate, because they
+  need Docker up. Run them by hand before submitting.
+- **golangci-lint uses its default linter set** until a `.golangci.yml` is
+  added.
+- **The gate only covers pushes made through Claude Code.** A push from a
+  plain terminal isn't checked.
 
 ---
 
