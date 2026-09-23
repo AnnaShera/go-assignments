@@ -11,7 +11,7 @@ The goal is a **repeatable process that holds up under interview time pressure**
 
 - **Strict TDD.** Every behavior starts as a failing test (Red → Green → Refactor).
 - **Documented trade-offs.** Each assignment records its choices in `docs/DECISIONS.md`, checked against the defaults in `STANDARDS.md`.
-- **Enforced quality.** A pre-push hook blocks any push unless every module passes `gofmt`, `go test`, and `golangci-lint`.
+- **Enforced quality.** Claude Code cannot push until every module passes `gofmt`, `go test`, and `golangci-lint` (including `integration`-tagged code).
 - **AI as pair programmer, not autopilot.** Claude skills guide the process and review the result. I make the design decisions and can explain every line.
 
 ## Assignments
