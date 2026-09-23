@@ -1,81 +1,68 @@
 # Go Assignments
 
-A workspace for test-driven Go assignments with guided workflows and comprehensive code review skills.
+Production-grade Go take-home assignments, built test-first with Claude as a pair programmer.
 
-## What is this?
+## Why this repo exists
 
-This repository scaffolds structured, interview-prep Go assignments with:
-- **TDD discipline** — Red → Green → Refactor workflow with guided phases
-- **Built-in skills** — Assignment scaffolding, code review, test quality evaluation, security review, interview prep
-- **Standards reference** — Curated decision guide for Go patterns and tradeoffs
-- **Pre-commit gates** — Automatic checks: gofmt, go test, golangci-lint
+I use this repo to practice Go backend interview assignments the way I would ship real code: tests first, decisions documented, quality enforced by tooling.
+The goal is a **repeatable process that holds up under interview time pressure**, not just finished assignments.
 
-## Getting started
+## What it demonstrates
 
-Start a new assignment:
-```bash
-/new-go-assignment
-```
+- **Strict TDD.** Every behavior starts as a failing test (Red → Green → Refactor).
+- **Documented trade-offs.** Each assignment records its choices in `docs/DECISIONS.md`, checked against the defaults in `STANDARDS.md`.
+- **Enforced quality.** A pre-push hook blocks any push unless every module passes `gofmt`, `go test`, and `golangci-lint`.
+- **AI as pair programmer, not autopilot.** Claude skills guide the process and review the result. I make the design decisions and can explain every line.
 
-The skill guides you through five phases:
-1. **Intake** — Read assignment, extract requirements, document edge cases
-2. **Standards Review** — Pick technical decisions from STANDARDS.md
-3. **Design** — Define package structure, exported signatures, checklist
-4. **TDD Implementation** — Red → Green → Refactor with explicit checkpoints
-5. **Debrief** — Document tradeoffs, lessons learned, reflections
+## Assignments
 
-## Available skills
+| Assignment | What it is | Read first |
+|---|---|---|
+| [vuln-findings-api](assignments/vuln-findings-api) | REST API for vulnerability findings, backed by Postgres | `docs/DEBRIEF.md` |
 
-- **`/security-review-checklist`** — Security audit against OWASP Top 10, OWASP LLM Top 10, OWASP API Security Top 10
-- **`/code-review`** — Bug and simplification detection
-- **`/go-interviewer-review`** — 8-dimension code assessment with senior-level verdict
-- **`/go-tests-scanner`** — Test suite quality evaluation with signal-to-noise ratio
-- **`/grill-me`** — Interview-style stress-test of a plan or design until reaching shared understanding
-- **`/pair-explainer`** — Forces step-by-step explanation of every code chunk while writing
+## How an assignment runs
 
-See `WORKFLOW.md` for the recommended order to run these in before submitting.
+Start with `/new-go-assignment`. It moves the assignment through five phases:
 
-## Before pushing
+1. **Intake.** Read the brief, extract requirements, log open questions in `docs/QUESTIONS.md`.
+2. **Standards review.** Pick technical defaults from `STANDARDS.md` and log them in `docs/DECISIONS.md`.
+3. **Design.** Package layout, exported signatures, and an implementation checklist in `docs/DESIGN.md`.
+4. **TDD implementation.** Red → Green → Refactor with explicit checkpoints, committing after each step.
+5. **Debrief.** Trade-offs, lessons learned, and next steps in `docs/DEBRIEF.md`.
 
-Push is blocked by hooks until:
-- Code passes `gofmt`
-- All tests pass (`go test ./...`)
+Before submitting, run the review skills in the order given in [`WORKFLOW.md`](WORKFLOW.md).
+
+## Review skills
+
+- **`/code-review`:** bugs and simplification opportunities.
+- **`/go-tests-scanner`:** test suite quality and signal-to-noise ratio.
+- **`/security-review-checklist`:** audit against OWASP Top 10, OWASP API Security Top 10, and OWASP LLM Top 10.
+- **`/go-interviewer-review`:** 8-dimension scoring with a senior-level verdict.
+- **`/grill-me`:** interview-style stress test of a plan or design.
+- **`/pair-explainer`:** step-by-step explanation of every code chunk while writing.
+
+## Quality gate
+
+`.claude/hooks/pre-push-check.sh` runs for **each module under `assignments/*/`**. A push is blocked unless:
+
+- `gofmt` reports no unformatted files
+- `go test ./...` passes
 - `golangci-lint` is clean
 
-## Repository structure
+## Repository layout
 
 ```
 go-assignments/
-├── CLAUDE.md — TDD discipline and conventions
-├── STANDARDS.md — Go decision reference (error handling, HTTP, database, etc.)
-├── README.md — This file
-├── .claude/skills/ — Assignment skills
-├── .gitignore — Go project exclusions
+├── CLAUDE.md          TDD rules and the 5-phase workflow
+├── STANDARDS.md       Go decision reference and intake checklist
+├── WORKFLOW.md        End-to-end flow diagram
+├── .claude/
+│   ├── skills/        Assignment and review skills
+│   └── hooks/         Pre-push quality gate
 └── assignments/
-    ├── vuln-findings-api/ — Example: REST API with Postgres
-    ├── your-assignment/ — Next assignment
-    └── ...
+    └── <name>/        One Go module per assignment
+        ├── go.mod
+        └── docs/      QUESTIONS, DECISIONS, DESIGN, DEBRIEF
 ```
 
-## Standards & Decision Framework
-
-See [`STANDARDS.md`](STANDARDS.md) for:
-- Universal questions checklist for project intake
-- Error handling patterns (sentinel vs custom types vs wrapped errors)
-- Data modeling and validation approaches
-- HTTP routing, database access, testing patterns
-- Code quality gates and conventions
-
-Every assignment logs decisions in `docs/DECISIONS.md` with rationale from this reference.
-
-## Recommended workflow
-
-1. **Start** → Run `/new-go-assignment` in this workspace
-2. **Implement** → Red → Green → Refactor, commit after each phase
-3. **Review** → Run security, code, and interviewer review skills
-4. **Iterate** → Fix feedback, push when hooks pass
-5. **Debrief** → Document tradeoffs and lessons
-
----
-
-See [`CLAUDE.md`](CLAUDE.md) for full TDD discipline and project conventions.
+See [`CLAUDE.md`](CLAUDE.md) for the full TDD rules and conventions.
