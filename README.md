@@ -6,7 +6,7 @@ A workspace for test-driven Go assignments with guided workflows and comprehensi
 
 This repository scaffolds structured, interview-prep Go assignments with:
 - **TDD discipline** — Red → Green → Refactor workflow with guided phases
-- **Three built-in skills** — Assignment scaffolding, code review, test quality evaluation
+- **Built-in skills** — Assignment scaffolding, code review, test quality evaluation, security review, interview prep
 - **Standards reference** — Curated decision guide for Go patterns and tradeoffs
 - **Pre-commit gates** — Automatic checks: gofmt, go test, golangci-lint
 
@@ -27,16 +27,16 @@ The skill guides you through five phases:
 ## Available skills
 
 - **`/new-go-assignment`** — Scaffolds and guides a complete assignment end-to-end
+- **`/security-review-checklist`** — Security audit against OWASP Top 10, OWASP LLM Top 10, OWASP API Security Top 10
+- **`/code-review`** — Bug and simplification detection
 - **`/go-interviewer-review`** — 8-dimension code assessment with senior-level verdict
 - **`/go-tests-scanner`** — Test suite quality evaluation with signal-to-noise ratio
+- **`/grill-me`** — Interview-style stress-test of a plan or design until reaching shared understanding
+- **`/pair-explainer`** — Forces step-by-step explanation of every code chunk while writing
+
+See `WORKFLOW.md` for the recommended order to run these in before submitting.
 
 ## Before pushing
-
-Run these skills before submitting:
-1. `/security-review-checklist` — Security audit (OWASP, injection, auth)
-2. `/code-review` — Bug and simplification detection
-3. `/go-interviewer-review` — Comprehensive assessment
-4. `/grill-me` — Interview-style Q&A practice
 
 Push is blocked by hooks until:
 - Code passes `gofmt`

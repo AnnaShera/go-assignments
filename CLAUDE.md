@@ -3,9 +3,9 @@
 Read `STANDARDS.md` before designing any solution and use its "Default for
 this repo" choices unless the assignment gives a specific reason to deviate.
 
-Pushes are automatically gated by `.claude/settings.json` hooks: the
-`security-review-checklist` skill runs as a review gate, and
-`.claude/hooks/pre-push-check.sh` blocks on `gofmt` and `go test` failures.
+Pushes are automatically gated by a `.claude/settings.json` hook —
+`.claude/hooks/pre-push-check.sh` blocks on `gofmt`, `go test`, and
+`golangci-lint` failures.
 
 ## TDD Discipline
 
