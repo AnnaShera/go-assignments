@@ -25,7 +25,7 @@ The goal is a **repeatable process that holds up under interview time pressure**
 **Prerequisites**
 
 - Go 1.26+
-- [golangci-lint](https://golangci-lint.run/) v2 (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`)
+- [golangci-lint](https://golangci-lint.run/) v2 (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`), found on `PATH` or in `$(go env GOPATH)/bin`
 - Docker (only needed for integration tests)
 - [Claude Code](https://claude.com/claude-code), for the skills and the push gate
 
@@ -80,6 +80,8 @@ Also used: **`/code-review`** (bugs and simplification opportunities), from Anth
 - `gofmt` reports no unformatted files anywhere in the repo
 - `go test ./...` passes in each module under `assignments/*/`
 - `golangci-lint` is clean in each module, both with and without the `integration` build tag
+
+It also blocks if `golangci-lint` v2 isn't found on `PATH` or in `$(go env GOPATH)/bin`.
 
 ## Repository layout
 

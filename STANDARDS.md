@@ -1,6 +1,6 @@
 # Engineering Standards & Decision Reference (Go)
 
-**Version 1.2** (2026-09-24). Earlier versions are in git history.
+**Version 1.3** (2026-09-24). Earlier versions are in git history.
 
 This file holds the technical decisions that come up in every assignment,
 with their trade-offs and one **default** each. `CLAUDE.md` covers *how we
@@ -32,7 +32,7 @@ Performance, and gets both sets of sections. No merging needed.
 
 | Trait | Yes when the assignment... | Adds these sections |
 |---|---|---|
-| **HTTP** | exposes an HTTP API | Logging, HTTP Routing, HTTP Server Hardening, API Design, HTTP Error Response Contract, Authentication |
+| **HTTP** | exposes an HTTP API | Logging, HTTP Routing / Web Framework, HTTP Server Hardening, API Design, HTTP Error Response Contract, Authentication & Authorization |
 | **Database** | persists to a real database | Database Access |
 | **Concurrency** | runs work in parallel, **or** keeps state shared across requests or goroutines | Concurrency |
 | **CLI** | is run as a command-line program | CLI |
@@ -141,7 +141,7 @@ assignments/<name>/
 ├── docs/                  QUESTIONS, DECISIONS, DESIGN, DEBRIEF
 ├── README.md              how to run it (see Delivery)
 ├── Dockerfile             HTTP or Database
-├── compose.yaml           Database, or any external service
+├── compose.yaml           HTTP, Database, or any external service
 ├── .env.example           every config variable with a dummy value, if there is config
 └── go.mod                 module github.com/AnnaShera/go-assignments/assignments/<name>
 ```
@@ -478,6 +478,8 @@ is read.
 
 The gate is enforced by `.claude/hooks/pre-push-check.sh`, which runs whenever
 Claude Code runs `git push`. Keep this section and the hook in sync.
+It fails closed: it blocks the push if `golangci-lint` v2 isn't on `PATH` or
+in `$(go env GOPATH)/bin`, or if `CLAUDE_PROJECT_DIR` isn't set.
 
 | Check | Scope | Blocks push |
 |---|---|---|

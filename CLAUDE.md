@@ -1,6 +1,6 @@
 # Home Assignment Instructions (Go, TDD)
 
-**Version 1.4** (2026-09-24). Earlier versions are in git history.
+**Version 1.5** (2026-09-24). Earlier versions are in git history.
 
 This file is *how we work*. `STANDARDS.md` is *what we build with*: read it
 before designing anything, and use its defaults unless the assignment gives a
@@ -206,9 +206,9 @@ happen. Every `docs/` path means `assignments/<name>/docs/`.
    report in this form and nothing longer: a 1-line summary of what was
    done, the files changed (as links), and the next step.
 5. **Debrief and submission check:** write `docs/DEBRIEF.md` (tradeoffs
-   made and why, what you'd do differently with more time), then run every
-   applicable command above and follow the assignment README from a clean
-   clone (see Delivery in `STANDARDS.md`).
+   made and why, what you'd do differently with more time) and the
+   assignment `README.md` (see Delivery in `STANDARDS.md`), then run every
+   applicable command above and follow that README from a clean clone.
 
 Each stopping point requires explicit go-ahead before advancing to the
 next phase. Do not skip ahead on your own.
