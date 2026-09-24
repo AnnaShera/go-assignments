@@ -2,9 +2,10 @@
 
 This file is *how we work*. `STANDARDS.md` is *what we build with*: read it
 before designing anything, and use its defaults unless the assignment gives a
-concrete reason to deviate (logged in `docs/DECISIONS.md`).
+concrete reason to deviate (logged in `docs/DECISIONS.md`). TDD process lives
+here only. If `STANDARDS.md` and this file disagree, stop and flag it.
 
-Pushes are automatically gated by a `.claude/settings.json` hook —
+Pushes are automatically gated by a `.claude/settings.json` hook.
 `.claude/hooks/pre-push-check.sh` blocks on `gofmt`, `go test`, and
 `golangci-lint` failures, checked separately in each module under
 `assignments/*/`.
@@ -51,9 +52,12 @@ Run these from `assignments/<name>/`:
 | Lint | `golangci-lint run ./...` |
 | Lint integration code | `golangci-lint run --build-tags=integration ./...` |
 | Integration tests | `docker compose up -d`, then `go test -tags=integration ./...` |
-| Race detector (Linux/CI only, needs cgo) | `go test -race ./...` |
+| Race detector (needs cgo and a C compiler; Linux, macOS, Windows) | `go test -race ./...` |
 | Known vulnerabilities | `govulncheck ./...` |
 | Format (repo-wide, from root) | `gofmt -l .` to check, `gofmt -w .` to fix |
+
+Before submission, all rows pass, including integration, race, and
+`govulncheck`.
 
 ## TDD Discipline
 
@@ -62,6 +66,8 @@ Run these from `assignments/<name>/`:
 - **Red fails for the right reason:** on an assertion, not a compile error.
   Add the new function's signature as a stub that returns zero values
   first, so the test compiles and fails on its check.
+- **Green is the smallest change that passes.** Hardcoding is fine if the
+  next test will force generalization.
 - Test names describe behavior: `TestOrderTotal_ReturnsErrorWhenNegativeAmount`,
   or for table-driven tests, a descriptive subtest name per case:
   `t.Run("negative amount returns error", func(t *testing.T) {...})`.
@@ -78,15 +84,37 @@ Run these from `assignments/<name>/`:
   HEAD is blocked anyway.
 - Refactor only on green. Never refactor and add behavior in the same step.
 
+**Build order for a REST assignment (inside out):**
+
+1. **Domain:** `Validate()` table tests (valid case, each invalid field,
+   multiple invalid fields at once).
+2. **Service:** business rules against a hand-written repository fake
+   (happy path, not found, conflict, validation passthrough).
+3. **Handler:** through the router with `httptest`, against a service fake.
+   Status code, JSON body, and the error envelope for each error type.
+4. **Repository:** integration tests (`integration` build tag) against real
+   Postgres: happy path, not found, unique violation, FK violation,
+   pagination order.
+5. **Wiring:** one smoke test that boots the full server on
+   `httptest.NewServer` and hits the health endpoint plus one real endpoint.
+
+**For an algorithm assignment:** start with the simplest edge case
+(empty/nil input), then the happy path, then the remaining edge cases from
+`docs/QUESTIONS.md`, one test per cycle.
+
 ## Code Quality Standards
 
 - Code must pass `gofmt`, `go vet`, and `golangci-lint` clean before a
   Refactor phase is considered done.
 - **Every returned error is handled or explicitly wrapped and returned.**
-  No `_ = err`, no ignored error from a function call, ever, including
-  deferred cleanup like `rows.Close()` or `tx.Rollback()`. Use the
-  named-return pattern under Database Access in `STANDARDS.md`. This is
+  No `_ = err`, no ignored error from a function call, ever. This is
   non-negotiable in Go and one of the fastest ways to fail a review.
+  - **Deferred cleanup counts.** For a `Close()` that returns an error
+    (files, `resp.Body`), use the named-return pattern under Database
+    Access in `STANDARDS.md`.
+  - **pgx/v5:** `rows.Close()` returns nothing, so always check `rows.Err()`
+    after iterating (or use `pgx.CollectRows`, which does it for you). Use
+    `pgx.BeginFunc` so commit and rollback are handled for you.
 - DRY, but avoid premature abstraction: a shared helper or abstraction
   needs three concrete call sites first. The one exception is a small,
   consumer-defined interface used as a test seam (see Testing Patterns in
@@ -133,17 +161,18 @@ Every assignment runs through the `/new-go-assignment` skill. For a small
 algorithmic exercise, phases 2 and 3 can be a few lines each, but they still
 happen. Every `docs/` path means `assignments/<name>/docs/`.
 
-1. **Intake** — read the assignment, fill `docs/QUESTIONS.md` from the
+1. **Intake:** read the assignment, fill `docs/QUESTIONS.md` from the
    Universal Questions Checklist in `STANDARDS.md`, get answers before
    designing.
-2. **Standards review** — pick the relevant options from `STANDARDS.md`,
+2. **Standards review:** pick the relevant options from `STANDARDS.md`,
    log the choice and reasoning in `docs/DECISIONS.md`.
-3. **Design** — produce `docs/DESIGN.md`: package layout, exported
-   function signatures, a checklist of what needs implementing.
-4. **TDD implementation** — Red → Green → Refactor per unit, with stopping
+3. **Design:** produce `docs/DESIGN.md`: package layout, exported
+   function signatures, and a checklist of what needs implementing, in
+   the build order above.
+4. **TDD implementation:** Red → Green → Refactor per unit, with stopping
    points for review after: test file skeleton is written, first passing
    test group, each package's implementation is complete.
-5. **Debrief** — `docs/DEBRIEF.md`: what tradeoffs were made and why,
+5. **Debrief:** `docs/DEBRIEF.md`: what tradeoffs were made and why,
    what you'd do differently with more time.
 
 Each stopping point requires explicit go-ahead before advancing to the
@@ -155,5 +184,7 @@ The checkpoint structure above is for **practice reps**, where pausing for
 review is the point. If this is running during an actual timed, AI-assisted
 interview: skip the stop-and-wait approvals in phase 4, keep `docs/DECISIONS.md`
 to one line per decision instead of a full writeup, and save the debrief for
-after submission. The Working Rules and TDD commits still apply. Say
-"live mode" at the start of a session to switch.
+after submission. The Working Rules and TDD commits still apply. If the
+interviewer is unavailable, record your assumption for each open question in
+`docs/QUESTIONS.md` and continue. Say "live mode" at the start of a session
+to switch.
