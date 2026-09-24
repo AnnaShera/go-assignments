@@ -102,22 +102,27 @@ order:
 1. **Domain** (always): `Validate()` table tests (valid case, each invalid
    field, multiple invalid fields at once, asserting every field is
    reported).
-2. **Service** (when there's logic beyond validation): business rules
-   against a hand-written fake of each dependency (happy path, not found,
-   conflict, validation passthrough).
-3. **Adapter**, one per entry point:
-   - **HTTP:** through the router with `httptest`, against a service fake.
+2. **Service** (only with the business-rules layer shape; see Layers in
+   `STANDARDS.md`): business rules against a hand-written fake of each
+   dependency (happy path, not found, conflict, validation passthrough).
+3. **Stream processing** (Large input): the core function against an
+   in-memory `strings.Reader`, with output captured in a `bytes.Buffer`:
+   empty input, a line longer than 64 KiB, and a malformed record reported
+   with its line number.
+4. **Adapter**, one per entry point:
+   - **HTTP:** through the router with `httptest`, against a fake of the
+     interface the handler calls (the service, or the store for thin CRUD).
      Status code, JSON body, and the error envelope for each error type.
    - **CLI:** `run` with `bytes.Buffer` for stdout and stderr: output,
-     returned error, and usage errors.
+     returned error, and usage errors; plus a table test for `exitCode`.
    - **Messages:** the handler function called directly: success, retryable
      failure, duplicate message.
-4. **Concurrency:** a test that hits the shared state from many goroutines
+5. **Concurrency:** a test that hits the shared state from many goroutines
    at once, so the race detector has something to catch.
-5. **Repository** (Database): integration tests (`integration` build tag)
+6. **Repository** (Database): integration tests (`integration` build tag)
    against real Postgres: happy path, not found, unique violation, FK
    violation, pagination order.
-6. **Wiring** (HTTP, `integration` tag): one smoke test that builds the
+7. **Wiring** (HTTP, `integration` tag): one smoke test that builds the
    real handler with the real database, serves it on `httptest.NewServer`,
    and hits `/healthz` plus one real endpoint.
 
@@ -191,10 +196,10 @@ happen. Every `docs/` path means `assignments/<name>/docs/`.
    `Applies when:` matches, take its default, and log any deviation in
    `docs/DECISIONS.md`.
 3. **Design:** produce `docs/DESIGN.md`: package layout, exported
-   function signatures, data flow (one line per request, command, or
-   message path, e.g. `POST /scans → handlers → service → repository →
-   Postgres`), and a checklist of what needs implementing, in the build
-   order above.
+   function signatures, the layer shape (thin CRUD or business rules), data
+   flow (one line per request, command, or message path, e.g.
+   `POST /scans → handlers → service → repository → Postgres`), and a
+   checklist of what needs implementing, in the build order above.
 4. **TDD implementation:** Red → Green → Refactor per unit, with stopping
    points for review after: test file skeleton is written, first passing
    test group, each package's implementation is complete. At each stop,

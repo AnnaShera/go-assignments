@@ -53,7 +53,7 @@ Testing Patterns, Dependency Policy, Delivery, Tooling & Quality Gates.
 
 | Topic | Applies when | Default |
 |---|---|---|
-| Layout | always | One module per assignment, `cmd/` for wiring, `internal/` for everything else; `main` only calls `run` |
+| Layout | always | One module per assignment, `cmd/` for wiring, `internal/` for everything else; `main` only calls `run`; a `service` package only when there are business rules |
 | Context | always | `context.Context` first on anything that does I/O; never stored in a struct |
 | Errors | always | Domain sentinels + multi-field `ValidationError`, wrapped with `%w`, mapped to output in one place |
 | Modeling & validation | always | Plain structs, `Validate() error`, money as integer minor units, time in UTC |
@@ -165,12 +165,23 @@ assignments/<name>/
   ```
 
   `stop()` is called before `os.Exit` because `os.Exit` skips deferred
-  calls.
-- Name packages after what they provide (`handlers`, `repository`, `domain`),
-  never `utils`, `common`, or `helpers`.
-- Dependencies point inward: `handlers` → `domain` ← `repository`. The
-  `domain` package imports neither of them, and nothing imports `handlers`
-  except `main`.
+  calls. A CLI maps errors to exit codes 0/1/2 instead of always 1; see
+  [CLI](#cli).
+- Name packages after what they provide (`handlers`, `service`,
+  `repository`, `domain`), never `utils`, `common`, or `helpers`.
+- **Layers.** Pick the shape by whether there's logic beyond validation:
+  - **Thin CRUD** (validate, store, return): `handlers` → `repository`.
+    The handler package declares the small store interface it calls.
+  - **Business rules** (state transitions, cross-entity checks,
+    calculations): add a `service` package, `handlers` → `service` →
+    `repository`. The handler package declares the service interface it
+    calls; the service package declares the repository interface it calls.
+    Business rules live in `service`, never in handlers or SQL.
+
+  Either way, every package may import `domain`, and `domain` imports no
+  other internal package. Only `cmd` imports the concrete implementations
+  and wires them together. Record which shape you picked in
+  `docs/DECISIONS.md`.
 - Don't create a package for a single small type. Split when a package
   starts doing two jobs, not before.
 - Skip `pkg/`. For a single-module assignment it adds a level of nesting and
@@ -391,10 +402,12 @@ the router for handlers, stdlib assertions unless struct comparisons get
 unwieldy (then `testify`), hand-written fakes over a mocking framework unless
 the interface is large.
 
-- **Interfaces as test seams:** the consumer defines the interface it needs
-  (the handler package declares the store interface it calls), kept to the
-  methods it actually uses. This is the one place an interface is justified
-  with a single real implementation. The fake is the second.
+- **Interfaces as test seams:** the consumer defines the interface it needs,
+  kept to the methods it actually uses: the handler package declares the
+  store or service interface it calls, the service package declares the
+  repository interface (see Layers under [Project Layout](#project-layout)).
+  This is the one place an interface is justified with a single real
+  implementation. The fake is the second.
 - **Helpers:** call `t.Helper()` in every test helper so failures point at
   the caller, and register cleanup with `t.Cleanup` rather than `defer`.
 - **Determinism:** no `time.Sleep`, no real clock, no dependence on map
@@ -479,8 +492,8 @@ roughly the same analyzers as `go vet`, so `go vet ./...` is still worth
 running by hand before submitting.
 
 **Go version:** the `go` directive in each `go.mod` matches the toolchain in
-the README prerequisites (Go 1.26). Go 1.27 shipped on 2026-08-19; stay on
-1.26 until the README moves. Nothing in this file needs more than Go 1.25.
+the README prerequisites (Go 1.26). Move both together, never one alone.
+Nothing in this file needs more than Go 1.25.
 
 Known gaps, deliberately left for now:
 
@@ -809,7 +822,39 @@ brief asks for nested subcommands.
   carries diagnostics and errors.
 - **Exit codes:** `0` success, `1` runtime failure, `2` usage error (the
   convention the `flag` package itself follows). `-h` / `-help` exits `0`:
-  `fs.Parse` returns `flag.ErrHelp` for it.
+  `fs.Parse` returns `flag.ErrHelp` for it. `run` reports usage problems on
+  its own `stderr` (for a bad flag, `fs.Parse` already has) and returns
+  `errUsage`; `main` maps the result and prints only runtime errors:
+
+  ```go
+  var errUsage = errors.New("usage error")
+
+  func main() {
+      ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+      err := run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr)
+      stop()
+      os.Exit(exitCode(err))
+  }
+
+  func exitCode(err error) int {
+      switch {
+      case err == nil, errors.Is(err, flag.ErrHelp):
+          return 0
+      case errors.Is(err, errUsage):
+          return 2
+      default:
+          fmt.Fprintln(os.Stderr, err)
+          return 1
+      }
+  }
+  ```
+
+  `exitCode` is a pure function, so a table test covers all three codes.
+- **Every write checks its error.** Output goes through the `io.Writer`
+  that `run` receives, and `errcheck` flags an unchecked
+  `fmt.Fprintln(stdout, ...)`, even when the writer is a `*bufio.Writer`.
+  Return the error: `if _, err := fmt.Fprintln(stdout, line); err != nil { return fmt.Errorf("write output: %w", err) }`.
+  Only `fmt.Fprint*` to `os.Stderr`, as in `main` above, is exempt.
 - Read input from an `io.Reader` (a file argument, or stdin when none is
   given), so tests pass a `strings.Reader`.
 - Tests call `run` with `bytes.Buffer` for stdout and stderr and assert on
@@ -835,7 +880,9 @@ brief asks for nested subcommands.
 - CSV: `encoding/csv` `Reader.Read` in a loop until `io.EOF`. Set
   `FieldsPerRecord` to enforce the column count. `ReuseRecord` cuts
   allocations on big files, but copy any record you keep.
-- Wrap output in `bufio.NewWriter` and check the error from `Flush`.
+- Wrap output in `bufio.NewWriter` for throughput. Buffering doesn't exempt
+  writes from `errcheck`: check every write's error, then check `Flush`,
+  which reports anything the buffer hit on the way out.
 - Bad records: follow the intake answer (skip and report, or fail). Either
   way, the message names the **line number**.
 - Close files with the named-return pattern shown under
