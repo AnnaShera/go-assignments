@@ -1,9 +1,12 @@
 # Home Assignment Instructions (Go, TDD)
 
+**Version 1.3** (2026-09-24). Earlier versions are in git history.
+
 This file is *how we work*. `STANDARDS.md` is *what we build with*: read it
 before designing anything, and use its defaults unless the assignment gives a
 concrete reason to deviate (logged in `docs/DECISIONS.md`). TDD process lives
-here only. If `STANDARDS.md` and this file disagree, stop and flag it.
+here only; technical rules live in `STANDARDS.md` only. If the two files
+disagree, stop and flag it.
 
 Pushes are automatically gated by a `.claude/settings.json` hook.
 `.claude/hooks/pre-push-check.sh` blocks on `gofmt`, `go test`, and
@@ -23,12 +26,17 @@ These hold in every phase, in practice and live mode alike.
   `docs/DECISIONS.md` (see Dependency Policy in `STANDARDS.md`).
 - **Stay inside the brief.** Good ideas outside it go into
   `docs/DEBRIEF.md` under "with more time", not into the code.
+- **Nothing half-finished at submission.** No leftover stubs, `TODO`s,
+  commented-out code, or feature flags in the submitted code. If something
+  won't be finished, cut it and list it under "Not done" in the assignment
+  README. Red-phase stubs are fine while a cycle is in progress.
 - **Don't guess requirements.** An ambiguity is a question for the user. A
   decision that comes up mid-implementation gets one line in
   `docs/DECISIONS.md` before the code that depends on it.
 - **Every line must be explainable in the interview.** Work in small steps,
   explain anything non-obvious while writing it, and prefer the boring
-  solution over the clever one.
+  solution over the clever one. If the user can't explain a line, it
+  gets explained or rewritten before moving on.
 
 ## Repo Layout & Conventions
 
@@ -36,10 +44,11 @@ These hold in every phase, in practice and live mode alike.
   its own Go module. There is no root `go.mod`, so run Go commands from
   inside the assignment folder.
 - Module path: `github.com/AnnaShera/go-assignments/assignments/<name>`.
-- Layout inside an assignment follows Project Layout in `STANDARDS.md`.
+- Layout inside an assignment follows Project Layout in `STANDARDS.md`,
+  including the assignment's own `README.md` (see Delivery).
 - Workflow docs go in `assignments/<name>/docs/`, never in the repo root.
 - When a new assignment is created, add a row for it to the Assignments
-  table in `README.md`.
+  table in the repo-root `README.md`.
 
 ## Commands
 
@@ -48,16 +57,19 @@ Run these from `assignments/<name>/`:
 | Purpose | Command |
 |---|---|
 | Unit tests | `go test ./...` |
+| Unit tests, random order | `go test -shuffle=on ./...` |
 | Vet | `go vet ./...` |
 | Lint | `golangci-lint run ./...` |
 | Lint integration code | `golangci-lint run --build-tags=integration ./...` |
 | Integration tests | `docker compose up -d`, then `go test -tags=integration ./...` |
-| Race detector (needs cgo and a C compiler; Linux, macOS, Windows) | `go test -race ./...` |
+| Race detector (needs cgo: not on this Windows machine; run on Linux or in CI) | `go test -race ./...` |
+| Benchmarks (Performance trait) | `go test -bench=. -benchmem ./...` |
 | Known vulnerabilities | `govulncheck ./...` |
+| Module tidiness (prints nothing when clean) | `go mod tidy -diff` |
 | Format (repo-wide, from root) | `gofmt -l .` to check, `gofmt -w .` to fix |
 
-Before submission, all rows pass, including integration, race, and
-`govulncheck`.
+Before submission, every row that applies passes, including integration,
+race, and `govulncheck`.
 
 ## TDD Discipline
 
@@ -84,23 +96,35 @@ Before submission, all rows pass, including integration, race, and
   HEAD is blocked anyway.
 - Refactor only on green. Never refactor and add behavior in the same step.
 
-**Build order for a REST assignment (inside out):**
+**Build order (inside out).** Take every step whose trait applies, in this
+order:
 
-1. **Domain:** `Validate()` table tests (valid case, each invalid field,
-   multiple invalid fields at once).
-2. **Service:** business rules against a hand-written repository fake
-   (happy path, not found, conflict, validation passthrough).
-3. **Handler:** through the router with `httptest`, against a service fake.
-   Status code, JSON body, and the error envelope for each error type.
-4. **Repository:** integration tests (`integration` build tag) against real
-   Postgres: happy path, not found, unique violation, FK violation,
-   pagination order.
-5. **Wiring:** one smoke test that boots the full server on
-   `httptest.NewServer` and hits the health endpoint plus one real endpoint.
+1. **Domain** (always): `Validate()` table tests (valid case, each invalid
+   field, multiple invalid fields at once, asserting every field is
+   reported).
+2. **Service** (when there's logic beyond validation): business rules
+   against a hand-written fake of each dependency (happy path, not found,
+   conflict, validation passthrough).
+3. **Adapter**, one per entry point:
+   - **HTTP:** through the router with `httptest`, against a service fake.
+     Status code, JSON body, and the error envelope for each error type.
+   - **CLI:** `run` with `bytes.Buffer` for stdout and stderr: output,
+     returned error, and usage errors.
+   - **Messages:** the handler function called directly: success, retryable
+     failure, duplicate message.
+4. **Concurrency:** a test that hits the shared state from many goroutines
+   at once, so the race detector has something to catch.
+5. **Repository** (Database): integration tests (`integration` build tag)
+   against real Postgres: happy path, not found, unique violation, FK
+   violation, pagination order.
+6. **Wiring** (HTTP, `integration` tag): one smoke test that builds the
+   real handler with the real database, serves it on `httptest.NewServer`,
+   and hits `/healthz` plus one real endpoint.
 
 **For an algorithm assignment:** start with the simplest edge case
 (empty/nil input), then the happy path, then the remaining edge cases from
-`docs/QUESTIONS.md`, one test per cycle.
+`docs/QUESTIONS.md`, one test per cycle. With the Performance trait, add
+the benchmark once the tests are green.
 
 ## Code Quality Standards
 
@@ -109,12 +133,9 @@ Before submission, all rows pass, including integration, race, and
 - **Every returned error is handled or explicitly wrapped and returned.**
   No `_ = err`, no ignored error from a function call, ever. This is
   non-negotiable in Go and one of the fastest ways to fail a review.
-  - **Deferred cleanup counts.** For a `Close()` that returns an error
-    (files, `resp.Body`), use the named-return pattern under Database
-    Access in `STANDARDS.md`.
-  - **pgx/v5:** `rows.Close()` returns nothing, so always check `rows.Err()`
-    after iterating (or use `pgx.CollectRows`, which does it for you). Use
-    `pgx.BeginFunc` so commit and rollback are handled for you.
+  Deferred cleanup counts: for a `Close()` that returns an error (files,
+  `resp.Body`, `*sql.Rows`), use the named-return pattern under Database
+  Access in `STANDARDS.md`.
 - DRY, but avoid premature abstraction: a shared helper or abstraction
   needs three concrete call sites first. The one exception is a small,
   consumer-defined interface used as a test seam (see Testing Patterns in
@@ -147,9 +168,10 @@ Before submission, all rows pass, including integration, race, and
   anything that doesn't touch an external dependency. They use fakes, run
   in milliseconds, and are part of every Red → Green → Refactor loop.
 - **Integration tests** cover the edges where the real dependency's behavior
-  matters: queries, constraints, transactions, cascade deletes. They run
-  against the real thing (e.g. Postgres via `docker compose`), never a mock,
-  because a mock only confirms what you already believe the dependency does.
+  matters: queries, constraints, transactions, cascade deletes, broker
+  delivery. They run against the real thing (e.g. Postgres via
+  `docker compose`), never a mock, because a mock only confirms what you
+  already believe the dependency does.
 - Integration tests live behind the `integration` build tag
   (`//go:build integration`) and never mix into the fast unit suite.
 - Patterns (table-driven, `httptest` through the router, fakes, isolation,
@@ -161,19 +183,27 @@ Every assignment runs through the `/new-go-assignment` skill. For a small
 algorithmic exercise, phases 2 and 3 can be a few lines each, but they still
 happen. Every `docs/` path means `assignments/<name>/docs/`.
 
-1. **Intake:** read the assignment, fill `docs/QUESTIONS.md` from the
-   Universal Questions Checklist in `STANDARDS.md`, get answers before
-   designing.
-2. **Standards review:** pick the relevant options from `STANDARDS.md`,
-   log the choice and reasoning in `docs/DECISIONS.md`.
+1. **Intake:** read the assignment, answer the Traits questions in
+   `STANDARDS.md` (record them as the first lines of `docs/DECISIONS.md`),
+   fill `docs/QUESTIONS.md` from the Universal Questions Checklist, and get
+   answers before designing.
+2. **Standards review:** go through every `STANDARDS.md` section whose
+   `Applies when:` matches, take its default, and log any deviation in
+   `docs/DECISIONS.md`.
 3. **Design:** produce `docs/DESIGN.md`: package layout, exported
-   function signatures, and a checklist of what needs implementing, in
-   the build order above.
+   function signatures, data flow (one line per request, command, or
+   message path, e.g. `POST /scans → handlers → service → repository →
+   Postgres`), and a checklist of what needs implementing, in the build
+   order above.
 4. **TDD implementation:** Red → Green → Refactor per unit, with stopping
    points for review after: test file skeleton is written, first passing
-   test group, each package's implementation is complete.
-5. **Debrief:** `docs/DEBRIEF.md`: what tradeoffs were made and why,
-   what you'd do differently with more time.
+   test group, each package's implementation is complete. At each stop,
+   report in this form and nothing longer: a 1-line summary of what was
+   done, the files changed (as links), and the next step.
+5. **Debrief and submission check:** write `docs/DEBRIEF.md` (tradeoffs
+   made and why, what you'd do differently with more time), then run every
+   applicable command above and follow the assignment README from a clean
+   clone (see Delivery in `STANDARDS.md`).
 
 Each stopping point requires explicit go-ahead before advancing to the
 next phase. Do not skip ahead on your own.
@@ -184,7 +214,8 @@ The checkpoint structure above is for **practice reps**, where pausing for
 review is the point. If this is running during an actual timed, AI-assisted
 interview: skip the stop-and-wait approvals in phase 4, keep `docs/DECISIONS.md`
 to one line per decision instead of a full writeup, and save the debrief for
-after submission. The Working Rules and TDD commits still apply. If the
-interviewer is unavailable, record your assumption for each open question in
+after submission. The Working Rules and TDD commits still apply, and so does
+the README (a reviewer who can't run it stops there). If the interviewer is
+unavailable, record your assumption for each open question in
 `docs/QUESTIONS.md` and continue. Say "live mode" at the start of a session
 to switch.
