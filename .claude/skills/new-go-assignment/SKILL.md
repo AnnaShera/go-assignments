@@ -1,100 +1,167 @@
-# New Go Assignment Workflow
+---
+name: new-go-assignment
+description: Runs a Go take-home or interview-prep assignment end to end in this repo, scaffold, Intake, Standards review, Design, TDD implementation, then Debrief and submission check, writing each phase to assignments/<name>/docs/ and stopping for explicit go-ahead between phases. Use when the user says "new assignment", "new take-home", "start the assignment", or pastes an assignment brief, and when resuming an assignment that already has a docs/ folder.
+---
 
-This skill guides developers through test-driven development (TDD) assignments in Go, following a structured five-phase workflow with explicit review checkpoints.
+# New Go Assignment
 
-## Overview
+Runs the workflow in `CLAUDE.md` ("Structured Workflow") using the
+defaults in `STANDARDS.md`. Those two files are the source of truth. This
+skill only sequences them, so when they say something more specific,
+follow them.
 
-The workflow automates setup and guides users through five phases:
+**Every phase transition needs the user's explicit go-ahead.** Never
+advance because a phase "looks done." If you're about to write code before
+`docs/DESIGN.md` is approved, stop.
 
-1. **Setup & Intake** — Creates folder structure, reads the assignment, documents requirements and edge cases in `docs/QUESTIONS.md`
-2. **Standards Review** — Confirms technical decisions (error handling, package structure, testing strategy, etc.) in `docs/DECISIONS.md`
-3. **Design** — Maps package layout, defines exported function signatures, and creates implementation checklist in `docs/DESIGN.md`
-4. **TDD Execution** — Writes failing tests (Red), implements code (Green), refactors (Refactor), with regular review checkpoints
-5. **Debrief** — Documents tradeoffs, lessons learned, and what you'd do differently in `docs/DEBRIEF.md`
+All `docs/` paths below mean `assignments/<name>/docs/`.
 
-## Key Features
+## Phase 0: Setup
 
-- **Fast intake mode** (10–15 minutes) with compact documentation using the Universal Questions Checklist from `STANDARDS.md`
-- **Explicit stop points** between phases for user review and approval before advancing
-- **Red → Green → Refactor discipline** with commits after each phase transition
-- **TDD pattern validation** during implementation with behavior coverage summaries
-- **Integration testing support** with `docker-compose` for database-dependent tests
-- **Standards checklist** ensuring error handling, code quality, and Go conventions are met
+1. Confirm `CLAUDE.md` and `STANDARDS.md` exist at the repo root. They're
+   shared by every assignment, never copied into one. If either is
+   missing, stop and tell the user.
+2. Ask whether this is a **practice rep** or **live mode**, unless the user
+   already said "live mode" this session. Note the mode; it changes
+   phases 4 and 5.
+3. Get the brief. Don't go further without it.
+4. Scaffold the assignment:
+   - Agree on a short kebab-case `<name>` with the user.
+   - Branch off an up-to-date `main`: `assignment/<name>`. Never work on
+     `main`.
+   - Create `assignments/<name>/docs/`.
+   - From `assignments/<name>/`, run
+     `go mod init github.com/AnnaShera/go-assignments/assignments/<name>`,
+     and make sure the `go` directive matches the README prerequisites.
+   - Add a row to the Assignments table in the repo-root `README.md`,
+     with status "In progress".
+   - Commit: `Scaffold <name> assignment`.
 
-## Output Structure
+   Other folders (`cmd/`, `internal/`, `migrations/`, `testdata/`) are
+   created in Phase 4, when a test first needs them.
 
-Generates documentation under `docs/` with files:
-- `docs/QUESTIONS.md` — Requirements and edge cases from the assignment
-- `docs/DECISIONS.md` — Technical decisions made and rationale
-- `docs/DESIGN.md` — Package layout, exported signatures, implementation checklist
-- `docs/DEBRIEF.md` — Tradeoffs, lessons learned, reflections on the approach
+## Phase 1: Intake
 
-Implementation goes into the project's existing package structure (`cmd/`, `pkg/`, or as specified by the assignment).
+1. Answer every row of **Traits** in `STANDARDS.md` with yes or no and a
+   one-line reason. Watch the trap it names: an HTTP server with an
+   in-memory store is Concurrency: yes. Write the answers as the first
+   lines of `docs/DECISIONS.md`.
+2. Create `docs/QUESTIONS.md`:
+   - Under `## Brief`, paste the brief verbatim, so later reviews can
+     check requirements against it.
+   - Go through the **Universal Questions Checklist**, keeping the groups
+     that apply. For each question, either answer it from the brief
+     (quote the line) or mark it **OPEN**.
+3. Get every OPEN question answered. Use `AskUserQuestion` when there's a
+   small set of reasonable options, plain conversation otherwise, and
+   recommend an option when one is clearly better. Never guess to avoid
+   asking. In live mode, if the interviewer can't be reached, record your
+   assumption and mark it **ASSUMED**.
+4. Update `docs/QUESTIONS.md` with the answers. Commit:
+   `Intake: traits and questions for <name>`.
+5. **Stop.** Summarize in 2–3 sentences: the traits, and anything the
+   answers changed about scope. Wait for the go-ahead.
 
-## Technical Constraints
+## Phase 2: Standards review
 
-- Go 1.22+
-- Uses `go test ./...` for unit testing, integration tests via `docker-compose`
-- Linting via `gofmt`, `go vet`, and `golangci-lint`
-- Emphasizes error handling, clear package boundaries, and maintainable code
-- Commits after every Green or Refactor step during TDD (small commits, not batch commits)
-- No naked `interface{}` or reflection without justification
-- DRY principle applies, but avoid premature abstraction (wait for 3 call sites)
+1. List the sections that apply: every `always` section, plus every
+   section whose `Applies when:` matches a trait answered yes.
+2. Take each section's default. For each deviation, add a line to
+   `docs/DECISIONS.md` in the format `STANDARDS.md` prescribes:
+   `**Topic:** chose X instead of the default Y, because Z.`
+3. Also record everything else the sections ask to be recorded: the layer
+   shape (Layers, under Project Layout), one line per third-party
+   dependency (Dependency Policy), and where auth would go
+   (Authentication & Authorization, HTTP only).
+4. Keep it short. Defaults don't need restating, just a line naming the
+   sections applied. In live mode, one line per decision.
+5. Commit: `Standards review for <name>`.
+6. **Stop.** List the sections applied and any deviations. Wait for the
+   go-ahead.
 
-## Workflow Phases
+## Phase 3: Design
 
-### Phase 1: Setup & Intake
-- Read the assignment and extract requirements
-- Fill `docs/QUESTIONS.md` using the Universal Questions Checklist from `STANDARDS.md`
-- Clarify ambiguities before moving forward
-- Create the initial project structure (cmd/, pkg/, or docs/ directories as needed)
+1. Write `docs/DESIGN.md` with:
+   - Package layout: a tree with a one-line purpose per package.
+   - Layer shape: thin CRUD or business rules.
+   - Exported types and function signatures per package, interfaces
+     especially, each declared in the package that consumes it. Phase 4
+     tests are written against these.
+   - Data flow: one line per request, command, or message path.
+   - An implementation checklist in the **build order** from `CLAUDE.md`,
+     including only the steps whose trait applies.
+2. Commit: `Design for <name>`.
+3. **Stop.** Walk through the design in a few sentences. No test or
+   implementation code before the go-ahead.
 
-### Phase 2: Standards Review
-- Pick relevant choices from `STANDARDS.md` (validation approach, error handling, DB testing strategy, etc.)
-- Log each decision in `docs/DECISIONS.md` with reasoning
-- Align on technical direction before design work
+## Phase 4: TDD implementation
 
-### Phase 3: Design
-- Produce `docs/DESIGN.md` with:
-  - Package layout and responsibility boundaries
-  - Exported function signatures (including error returns)
-  - Interface definitions if needed
-  - Data structures (types, structs)
-  - High-level algorithm/flow notes
-  - Checklist of what needs implementing
+Take the checklist one unit at a time: a function, an endpoint, or a
+package.
 
-### Phase 4: TDD Implementation
-- **Red:** Write failing tests first (describe behavior, then implement)
-- **Green:** Write minimal code to pass tests
-- **Refactor:** Clean up, optimize, extract common patterns (only when tests are passing)
-- Commit after each Green or Refactor phase (small commits showing your process)
-- Stop and wait for review approval after:
-  - Test file skeleton is written (before any implementation)
-  - First passing test group
-  - Each package's implementation is complete
-  - All tests passing and linters clean
+1. **Red:** add the signature as a stub that returns zero values, then
+   write the failing tests. Run `go test ./...` and confirm that only the
+   new tests fail, and that they fail on an assertion, not a compile
+   error. Commit: `<summary> (Red)`.
+2. **Green:** make the smallest change that passes. Run `go test ./...`
+   in full. Commit: `<summary> (Green)`.
+3. **Refactor:** only on green. Never add behavior here. `gofmt`,
+   `go vet`, and `golangci-lint` must all be clean. Commit:
+   `<summary> (Refactor)`. If there's nothing to refactor, skip it; never
+   make an empty commit.
 
-### Phase 5: Debrief
-- Document in `docs/DEBRIEF.md`:
-  - What tradeoffs were made and why
-  - What surprised you during implementation
-  - What you'd do differently with more time
-  - Patterns you discovered or applied
-  - Edge cases you discovered after design
+The Working Rules in `CLAUDE.md` apply throughout. In particular: never
+weaken a failing test, no new dependency without asking, and a decision
+made mid-implementation gets its line in `docs/DECISIONS.md` before the
+code that depends on it. Push the `assignment/<name>` branch only from
+green.
 
-## Live Interview Mode
+**Practice-mode stops.** Stop and wait at each of these:
 
-If running during a timed interview:
-- Skip stop-and-wait approvals in Phase 4 (keep moving)
-- Keep Phase 2 decisions brief (one line per decision, not full writeups)
-- Save the debrief for after submission
-- Say "live mode" at the start of a session to enable this
+- after the first test skeleton, before implementing
+- after the first passing test group
+- after each package is complete
 
-## Before You Start
+At each stop, report exactly this and nothing longer: a 1-line summary of
+what was done, the files changed (as links), and the next step.
 
-Ensure you've read:
-- The project's `STANDARDS.md` (for "Default for this repo" choices)
-- The project's `CLAUDE.md` (for conventions and expectations)
-- The assignment brief (requirements, constraints, examples)
+**Live mode:** no stops. Move through Red → Green → Refactor continuously,
+still committing every phase.
 
-The skill will prompt you for clarifications and guide you through each phase.
+## Phase 5: Debrief and submission check
+
+1. Write `docs/DEBRIEF.md`: the trade-offs made and why (link the
+   `docs/DECISIONS.md` entries behind them), and what you'd do
+   differently with more time. In live mode, defer this until the user
+   asks for it after submission.
+2. Write the assignment's own `README.md` with the sections, in the
+   order, given under **Delivery** in `STANDARDS.md`. This isn't deferred
+   in live mode: a reviewer who can't run the code stops there.
+3. Run the submission check:
+   - Every applicable row of the Commands table in `CLAUDE.md` must pass.
+     That includes integration tests, `-shuffle=on`, `govulncheck`, and
+     `go mod tidy -diff`. Run `-race` wherever the Tooling & Quality
+     Gates section says it can run, and tell the user plainly if it
+     wasn't run.
+   - Clone the repo into an empty folder in the scratchpad, check out the
+     branch, and follow the assignment README exactly, as the reviewer
+     will. Fix whatever breaks.
+4. Update the assignment's status in the repo-root README table. Commit.
+5. Suggest the review order from `WORKFLOW.md`: `/code-review`, then
+   `/go-tests-scanner`, then `/go-interviewer-review`.
+6. Merging `assignment/<name>` into `main` is the user's call. Ask, don't
+   merge.
+
+## If resuming mid-assignment
+
+If `assignments/<name>/docs/` already has some of these files, don't
+restart. Read what exists, say which phase you think is next and why,
+and confirm before continuing:
+
+| Present | Next phase |
+|---|---|
+| nothing, or no Traits in `DECISIONS.md` | 1 |
+| `QUESTIONS.md` with no OPEN items, but no standards review in `DECISIONS.md` | 2 |
+| `DECISIONS.md` complete, no `DESIGN.md` | 3 |
+| `DESIGN.md` with unchecked checklist items | 4 |
+| every checklist item done, no `DEBRIEF.md` or assignment `README.md` | 5 |

@@ -1,113 +1,129 @@
-# Go Interviewer Review Skill
+---
+name: go-interviewer-review
+description: Reviews a Go assignment in this repo the way a senior backend interviewer would, scoring 8 dimensions 0-10 with file:line citations, graded against the repo's STANDARDS.md defaults and the assignment's own docs/DECISIONS.md rather than generic style opinions. Use after TDD implementation, when the user asks for an interviewer review, a score, or "would this pass". Read-only; it doesn't change code.
+---
 
-This skill conducts a comprehensive code assessment of a completed Go assignment across eight quality dimensions, scoring each 0–10 with senior-level verdicts and actionable feedback.
+# Go Interviewer Review
 
-## Overview
+Reviews an assignment the way a senior backend interviewer would in a
+take-home debrief. It grades against the defaults in `STANDARDS.md`, the
+rules in `CLAUDE.md`, and the choices recorded in the assignment's
+`docs/DECISIONS.md`, not against generic style opinions.
 
-The review evaluates a Go codebase from an interviewer's perspective, assessing both technical correctness and software engineering judgment. It provides holistic scoring and targeted recommendations, not line-by-line nitpicks.
+**Read-only.** Report findings; don't fix them.
 
-## Eight Quality Dimensions
+## Before scoring
 
-### 1. **Error Handling** (0–10)
-- Every error explicitly handled or wrapped and returned
-- Errors carry context (`fmt.Errorf` with `%w`)
-- Custom error types used appropriately for domain errors
-- No `_ = err` or silent failures
-- Error messages are actionable and descriptive
+1. Read the assignment's `docs/QUESTIONS.md` (the brief and its answers),
+   `docs/DECISIONS.md` (traits, deviations, layer shape), and
+   `docs/DESIGN.md`, plus `STANDARDS.md` and `CLAUDE.md`.
+   - Grade only the `STANDARDS.md` sections that apply: the `always`
+     sections, plus those whose `Applies when:` matches a trait answered
+     yes.
+   - A deviation with a concrete reason in `DECISIONS.md` is **not** a
+     deduction. An unexplained deviation is.
+2. From `assignments/<name>/`, run the checks before reading code, and let
+   failures show where to look first: `gofmt -l .`, `go vet ./...`,
+   `golangci-lint run ./...` (also with `--build-tags=integration`),
+   `go test -shuffle=on ./...`, the integration tests if Docker is up,
+   `govulncheck ./...`, and `go mod tidy -diff`. Run `-race` only where
+   cgo is available (see Tooling & Quality Gates), and say so in the
+   report when it wasn't run. Don't claim a check passed that you didn't
+   run.
+3. Every finding cites `file:line`. No vague "error handling could be
+   better".
 
-### 2. **Code Clarity & Readability** (0–10)
-- Function and variable names are self-documenting
-- Code structure matches responsibility (packages, functions, methods)
-- Comments explain *why*, not *what*
-- Unnecessary abstractions avoided (YAGNI principle applied)
-- Cyclomatic complexity is reasonable per function
+## Scoring dimensions (0–10 each)
 
-### 3. **Package Design & Architecture** (0–10)
-- Packages reflect responsibility, not implementation layers
-- Package boundaries are clear and intentional
-- Interfaces used only at abstraction points (not over-designed)
-- No `interface{}` without justification
-- Exported API is minimal and well-documented
+### 1. Requirements & Delivery
+- Everything the brief asks for is implemented and behaves as specified.
+  Check against `## Brief` and the answered questions in `QUESTIONS.md`.
+- The assignment `README.md` has the sections listed under Delivery, and
+  the code runs from a clean clone in 3 commands or fewer.
+- Nothing half-finished: no leftover stubs, `TODO`s, commented-out code,
+  or skipped tests. Anything cut is listed under "Not done".
 
-### 4. **Testing Coverage & Quality** (0–10)
-- Happy path, error cases, and edge cases covered
-- Table-driven tests used appropriately
-- Unit tests isolated from external dependencies (fakes for interfaces)
-- Integration tests against real database where applicable
-- Test names describe behavior, not just "Test" + function name
-- Mocking used judiciously (real DB tested, not mocked)
+### 2. Architecture & Design
+- The package layout matches Project Layout, and the layer shape matches
+  the one recorded in `DECISIONS.md`. Business rules live in `service`
+  (business-rules shape), never in handlers or SQL.
+- `domain` imports no other internal package. Only `cmd` wires concrete
+  implementations. Interfaces are declared by the package that consumes
+  them.
+- Adapters don't leak: handlers don't run SQL, the repository knows
+  nothing about HTTP, and driver errors are translated in the repository.
 
-### 5. **Go Idioms & Conventions** (0–10)
-- Idiomatic error handling (`if err != nil`, error wrapping)
-- Follows Go naming conventions (CamelCase, acronyms)
-- Uses `context.Context` for cancellation and deadlines
-- Concurrency handled safely (no races, mutex/channel use appropriate)
-- Defer used for cleanup (file closes, transaction rollbacks)
-- No `panic` for expected failures
+### 3. Idiomatic Go
+- Errors are wrapped with `%w` and checked with `errors.Is`/`errors.As`.
+  None are dropped, deferred cleanup included (the named-return pattern
+  in Database Access). `_ = err` is an automatic flag.
+- `context.Context` is the first parameter on I/O and is actually passed
+  on. No context is stored in a struct.
+- No `interface{}`/`any` or reflection used to dodge a proper type.
+  Naming follows Go convention. Every package and every exported
+  identifier has a doc comment.
 
-### 6. **Correctness & Robustness** (0–10)
-- Logic handles edge cases (nil, empty, zero values, boundaries)
-- Race-condition free (passing `-race` in tests)
-- No resource leaks (connections, goroutines, file handles)
-- Invariants are maintained (pre/post conditions of functions)
-- SQL queries are safe from injection; parameters used correctly
+### 4. Correctness & Edge Cases
+- The edge cases in `QUESTIONS.md` are handled: empty/nil input, zero and
+  negative numbers, overflow, malformed input.
+- The traps named in `STANDARDS.md` are avoided:
+  - `rows.Err()` checked after every loop
+  - no typed-nil `*ValidationError` returned as an `error`
+  - empty lists encoded as `[]`
+  - pagination with a unique tiebreaker
+  - an oversize body answered with `413`
+  - money in integer minor units, time in UTC
+- Concurrency: shared state guarded next to the data, no unbounded
+  goroutines, every goroutine with a way to stop.
 
-### 7. **Performance Awareness** (0–10)
-- Algorithms chosen appropriately for the problem
-- No obvious inefficiencies (quadratic where linear is possible)
-- String concatenation uses `strings.Builder` or `fmt.Sprintf` appropriately
-- Database queries are efficient (indexes, prepared statements, N+1 detection)
-- Premature micro-optimization avoided (readability not sacrificed for marginal gains)
+### 5. Security
+- Everything in the Security Baseline: parameterized SQL only (including
+  `ORDER BY` via an allow-list), secrets only from the environment,
+  nothing internal in error output, every input size-bounded and
+  validated.
+- `govulncheck` is clean.
 
-### 8. **Meeting Requirements** (0–10)
-- All specified features implemented
-- Edge cases from requirements handled
-- Behavior matches the assignment brief
-- Integration tests passing
-- No skipped tests or TODO comments left behind
+### 6. Performance & Resource Management
+- Pool limits are set, `db.PingContext` runs at startup, and there are no
+  N+1 queries.
+- The `http.Server` has timeouts, the request body is capped, and
+  shutdown is graceful.
+- Large input is streamed rather than loaded into memory. With the
+  Performance trait: complexity is stated in the README, `b.Loop()`
+  benchmarks exist, and any optimization is backed by numbers.
 
-## Output Format
+### 7. Clean Code & Readability
+- No abstraction before three call sites, except a consumer-defined test
+  seam. No duplicated logic, and no function doing two jobs.
+- Names explain themselves. Comments say why, not what.
+- `gofmt` and `golangci-lint` are clean. Per `CLAUDE.md` they should be
+  already, so flag it if not.
 
-The review produces a structured report with:
+### 8. Testability & Test Quality
+- Tests follow the build order in `CLAUDE.md` for every trait that
+  applies: `Validate()` reporting every invalid field, adapter tests
+  covering the error envelope for each error type, repository
+  integration tests covering unique and FK violations, and a wiring smoke
+  test.
+- Tests are table-driven, go through the router, use hand-written fakes,
+  and hit the real database in integration tests. They're deterministic:
+  no `time.Sleep`, no real clock, and `-shuffle=on` passes.
+- The git log shows TDD: `(Red)`, `(Green)`, and `(Refactor)` commits in
+  that order for each unit.
+- For a deep test-suite pass, recommend `/go-tests-scanner` rather than
+  repeating it here.
 
-1. **Dimension Scores** — Each dimension scored 0–10 with brief rationale
-2. **Strengths** — 3–5 specific positive observations (what the candidate did well)
-3. **Growth Areas** — 3–5 specific improvements (ranked by priority: correctness > readability > optimization)
-4. **Senior-Level Verdict** — Overall assessment: "Strong Hire" / "Hire" / "Feedback Required" / "No Hire"
-5. **Interview Talking Points** — 2–3 questions an interviewer could ask to probe deeper understanding
+## Output
 
-## How to Use
+For each dimension: the score, then its findings as
+`file:line — issue — why it matters`. Keep it concise, and don't dwell on
+what's already correct. End with:
 
-Invoke this skill after you've completed an assignment and want a comprehensive code review:
-
-```
-/go-interviewer-review
-```
-
-Or review a specific file/package:
-
-```
-/go-interviewer-review ./pkg/orders
-```
-
-The skill will:
-1. Read the assignment brief (if `docs/DESIGN.md` or `docs/INTAKE.md` exists)
-2. Scan the implementation for patterns, errors, and structure
-3. Run `go test -v -race ./...` to check test status and race conditions
-4. Run `gofmt`, `go vet`, and `golangci-lint` to check code quality
-5. Assess against the eight dimensions
-6. Produce a scored report with actionable feedback
-
-## Grading Scale
-
-- **9–10:** Production-ready code, demonstrates senior-level judgment
-- **7–8:** Solid, interview-quality code with minor areas for growth
-- **5–6:** Acceptable, shows understanding but has meaningful gaps
-- **3–4:** Below interview standard, significant issues to address
-- **0–2:** Does not meet basic requirements
-
-## Interview Context
-
-This review is designed to mimic what a senior engineer would say in a debrief call after a take-home assignment. The verdict ("Hire", "Feedback Required", etc.) reflects whether the code would advance in a hiring process, not whether the candidate is good — it's about *readiness for this role*.
-
-Scores are not averages; a single critical flaw (e.g., all errors ignored) can make the verdict "No Hire" even if most dimensions score 7–8.
+- **Total:** out of 80.
+- **Top 3 fixes:** ranked by what an interviewer would flag first.
+- **Verdict:** Strong Hire, Hire, Feedback Required, or No Hire. A verdict
+  is not an average. One critical flaw (ignored errors throughout, SQL
+  built from strings, code that doesn't run from a clean clone) caps it
+  at No Hire, whatever the other scores.
+- **Interview talking points:** 2–3 questions an interviewer would ask to
+  probe the design, each with the file it's about.

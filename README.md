@@ -33,31 +33,43 @@ The goal is a **repeatable process that holds up under interview time pressure**
 
 ```bash
 cd assignments/<name>
-go test ./...                                  # unit tests
+go test -shuffle=on ./...                      # unit tests, in random order
 golangci-lint run ./...                        # lint
 docker compose up -d                           # only if the assignment has integration tests
 go test -tags=integration ./...                # integration tests against the real dependency
 ```
 
+The full list, including race, `govulncheck`, and benchmarks, is the
+Commands table in [`CLAUDE.md`](CLAUDE.md).
+
 ## How an assignment runs
 
-Start with `/new-go-assignment`. It moves the assignment through five phases:
+Start with `/new-go-assignment`. It scaffolds the assignment on its own
+`assignment/<name>` branch, then moves it through five phases, stopping for
+review between each:
 
-1. **Intake.** Read the brief, extract requirements, log open questions in `docs/QUESTIONS.md`.
-2. **Standards review.** Pick technical defaults from `STANDARDS.md` and log them in `docs/DECISIONS.md`.
-3. **Design.** Package layout, exported signatures, and an implementation checklist in `docs/DESIGN.md`.
-4. **TDD implementation.** Red → Green → Refactor with explicit checkpoints, committing after each step.
-5. **Debrief.** Trade-offs, lessons learned, and next steps in `docs/DEBRIEF.md`.
+1. **Intake.** Classify the assignment by traits (HTTP, Database, CLI,
+   Concurrency, and so on), then log the brief and every open question in
+   `docs/QUESTIONS.md` and get them answered.
+2. **Standards review.** Apply every `STANDARDS.md` section that matches
+   those traits, and log deviations in `docs/DECISIONS.md`.
+3. **Design.** Package layout, layer shape, exported signatures, data flow,
+   and a build-order checklist in `docs/DESIGN.md`.
+4. **TDD implementation.** Red → Green → Refactor, with a commit at every
+   phase so the git log shows the process.
+5. **Debrief and submission check.** Trade-offs in `docs/DEBRIEF.md`, the
+   assignment's own README, every check passing, and a run from a clean
+   clone.
 
-Before submitting, run the review skills in the order given in [`WORKFLOW.md`](WORKFLOW.md).
+Then run the review skills in the order given in [`WORKFLOW.md`](WORKFLOW.md).
 
 ## Skills
 
 These ship with the repo in `.claude/skills/`:
 
-- **`/new-go-assignment`:** runs the five phases above.
-- **`/go-tests-scanner`:** test suite quality and signal-to-noise ratio.
-- **`/go-interviewer-review`:** 8-dimension scoring with a senior-level verdict.
+- **`/new-go-assignment`:** scaffolds an assignment and runs the five phases above.
+- **`/go-tests-scanner`:** test suite signal-to-noise, and coverage gaps against the build order.
+- **`/go-interviewer-review`:** 8-dimension scoring against `STANDARDS.md` and the assignment's own decisions, with a hiring verdict.
 
 Also used: **`/code-review`** (bugs and simplification opportunities), from Anthropic's official `code-review` Claude Code plugin.
 
@@ -73,16 +85,22 @@ Also used: **`/code-review`** (bugs and simplification opportunities), from Anth
 
 ```
 go-assignments/
-├── CLAUDE.md          TDD rules and the 5-phase workflow
-├── STANDARDS.md       Go decision reference and intake checklist
+├── CLAUDE.md          How we work: working rules, TDD, build order, workflow
+├── STANDARDS.md       What we build with: traits, defaults, intake checklist
 ├── WORKFLOW.md        End-to-end flow diagram
 ├── .claude/
 │   ├── skills/        Assignment and review skills
 │   └── hooks/         Pre-push quality gate
 └── assignments/
     └── <name>/        One Go module per assignment
-        ├── go.mod
-        └── docs/      QUESTIONS, DECISIONS, DESIGN, DEBRIEF
+        ├── cmd/       Entry point, if there's a binary
+        ├── internal/  Application code
+        ├── docs/      QUESTIONS, DECISIONS, DESIGN, DEBRIEF
+        ├── README.md  How to run, test, and use it
+        └── go.mod
 ```
+
+The full per-assignment layout, including migrations, `testdata/`, and the
+Dockerfile, is Project Layout in [`STANDARDS.md`](STANDARDS.md).
 
 See [`CLAUDE.md`](CLAUDE.md) for the full TDD rules and conventions.

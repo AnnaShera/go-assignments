@@ -1,165 +1,152 @@
-# Go Tests Scanner Skill
+---
+name: go-tests-scanner
+description: Evaluates a Go assignment's test suite in this repo for signal-to-noise, finding low-value tests, coverage gaps against the CLAUDE.md build order, consolidation opportunities, fake/mock misuse, and non-determinism, with file:line citations and a prioritized remove/consolidate/add list. Use when the user asks to review, scan, or audit tests, or as step 2 of the submission review order in WORKFLOW.md. Read-only; it doesn't change code.
+---
 
-This skill evaluates the quality and completeness of a Go test suite, identifying low-value tests, coverage gaps, redundancy opportunities, and mocking practices. It outputs a signal-to-noise ratio assessment and actionable recommendations.
+# Go Tests Scanner
 
-## Overview
+Evaluates a test suite from a pragmatist's angle. Not "what's the
+coverage percentage" but "is each test earning its keep, and is anything
+that matters untested?"
 
-The tests scanner analyzes your test suite from a pragmatist's angle: not "how much coverage percentage" but "are your tests *earning their keep*?" It detects patterns that waste time during development and maintenance without catching real bugs.
+**Read-only.** Report findings; don't fix them.
 
-## What It Evaluates
+## Before scanning
 
-### 1. **Low-Value Tests** (Noise)
-Flags tests that add no discriminating power:
-- Testing trivial getters/setters with no logic
-- Tautological assertions (`if err != nil` → `require.NoError(t, err)`)
-- Tests for code that cannot fail (e.g., `json.Marshal` on a concrete struct)
-- Empty test tables or table entries that don't vary meaningfully
-- Assertions that always pass (comparing a value to itself, no side effects tested)
+1. Read the assignment's `docs/DECISIONS.md` (for the traits and the layer
+   shape) and `docs/QUESTIONS.md` (for the edge cases that were agreed).
+2. Read Testing Patterns in `STANDARDS.md` and the build order in
+   `CLAUDE.md`. They define what "covered" means here.
+3. From `assignments/<name>/`, run `go test -shuffle=on ./...` and
+   `go test -cover ./...`. Coverage numbers point at untested files; they
+   are not a target.
 
-### 2. **Coverage Gaps** (Signal Missing)
-Identifies critical paths not tested:
-- Happy path only; error branches untested
-- Function exported and used but never called in tests
-- Edge cases mentioned in comments but not in test cases
-  - Nil pointers not checked
-  - Empty slices not handled
-  - Zero values not considered
-  - Boundary conditions (min, max, off-by-one)
-- External dependencies (DB queries, HTTP calls) not integration-tested
+## What it evaluates
 
-### 3. **Redundancy Opportunities** (Consolidation)
-Detects tests that should be merged:
-- Nearly identical test functions differing only in one input → consolidate to table-driven
-- Test tables with repeated setup/teardown → extract fixture or helper
-- Multiple sequential `t.Run` subtests with independent concerns → consider regrouping by theme
+### 1. Low-value tests (noise)
+- Tests of trivial getters or setters with no logic.
+- Assertions that can't fail: comparing a value to itself, or asserting a
+  constant.
+- Tests of code that can't fail, such as `json.Marshal` on a plain struct.
+- **Weak assertions:** checking only `err == nil` or `x != nil`, never the
+  value that matters.
+- Table rows that don't vary anything meaningful.
 
-### 4. **Mocking Practices** (Smell Check)
-Flags over-mocking and drift risks:
-- Mocking a simple pure function or standard library function
-- Mock that differs materially from the real implementation (e.g., error behavior)
-- Mocking to avoid real DB when integration test is the point
-- Missing mock-vs-real regression tests (comparing mock behavior to actual)
+### 2. Coverage gaps (missing signal)
+Check each build-order step whose trait applies:
+- **Domain:** `Validate()` with a valid case, each invalid field, and
+  several invalid fields at once, asserting that **every** field is
+  reported.
+- **Service** (business-rules shape only): happy path, not found,
+  conflict, and validation passthrough, each against fakes.
+- **Stream processing** (Large input): empty input, a line longer than
+  64 KiB, and a malformed record reported with its line number.
+- **HTTP:** status code, JSON body, and the error envelope for **each**
+  error type, through the router.
+- **CLI:** output, the returned error, usage errors, and a table test for
+  `exitCode`.
+- **Messages:** success, retryable failure, and a duplicate message.
+- **Concurrency:** a test hitting the shared state from many goroutines
+  at once.
+- **Repository** (Database): happy path, not found, unique violation, FK
+  violation, and pagination order.
+- **Wiring:** one smoke test against the real database.
 
-### 5. **Test Organization** (Structure)
-Evaluates readability and maintainability:
-- Test names describe behavior (`TestOrderTotal_ReturnsErrorWhenNegativeAmount`)
-- Subtests grouped logically and consistently (`t.Run("error cases", ...)`)
-- Setup/teardown (fixtures, helpers) separate from assertions
-- No copy-paste test code; common patterns extracted
+Also flag:
+- error branches with no test
+- exported functions never exercised
+- edge cases agreed in `QUESTIONS.md` with no matching test
 
-### 6. **Assertions & Error Messages** (Debuggability)
-Checks test failure messages:
-- Assertion errors include actual vs. expected values
-- Custom error messages explain *why* the assertion matters
-- `t.Errorf` used over `t.Fatalf` where flow can continue
-- Table-driven test output identifies failing case clearly
+### 3. Consolidation opportunities
+- Near-identical test functions that differ only in input should become
+  one table-driven test.
+- Repeated setup should become a helper that calls `t.Helper()` and
+  registers cleanup with `t.Cleanup`.
 
-## Output Format
+### 4. Fakes and mocks
+- **Faking what shouldn't be faked:** a pure function, the standard
+  library, `database/sql`, or the driver. Queries are tested against the
+  real schema.
+- **An integration test that silently uses a fake**, when the real
+  dependency is the point of the test.
+- **Fakes that drift from the real thing:** a fake whose behavior (errors
+  especially) isn't pinned by an integration test of the real
+  implementation.
+- **Interface placement:** interfaces should be declared by the consumer
+  and kept to the methods it uses. Hand-written fakes are preferred over a
+  mocking framework unless the interface is large.
 
-The scanner produces a report with:
+### 5. Determinism and isolation
+- `time.Sleep`, the real clock, or dependence on map or test order. Time
+  should be injected, or tested with `testing/synctest` in concurrent
+  code.
+- Integration tests that rely on seed data or on another test running
+  first. Each test creates its own data and cleans up after itself.
+- Integration tests that aren't behind `//go:build integration`, or that
+  are mixed into the fast unit suite.
 
-1. **Signal-to-Noise Ratio** — Percentage of tests pulling their weight (rough: high-value / total)
-2. **Low-Value Tests Found** — List with line numbers and why (triviality, tautology, etc.)
-3. **Coverage Gaps** — List of untested critical paths and recommendations
-4. **Redundancy Opportunities** — Tests that should be consolidated with before/after examples
-5. **Mocking Issues** — Specific calls to review or replace with fakes
-6. **Recommended Actions** — Prioritized list: remove, consolidate, add (in that order)
+### 6. Organization and debuggability
+- Test names describe behavior (`TestOrderTotal_ReturnsErrorWhenNegativeAmount`),
+  and subtest names identify the case.
+- Failure messages show got vs. want. Use `t.Fatalf` only when the test
+  can't meaningfully continue.
+- Large expected outputs live in golden files under `testdata/`.
 
-## How to Use
+## Output
 
-Invoke this skill on your completed assignment:
+1. **Signal-to-noise:** high-value tests / total, as a rough percentage.
+   Above 75% is healthy, 50–75% needs cleanup, and below 50% needs
+   significant consolidation.
+2. **Low-value tests:** `file:line` and why.
+3. **Coverage gaps:** grouped by build-order step, each with the test to
+   add.
+4. **Consolidations:** which tests merge, with a short before and after.
+5. **Fake and determinism issues:** `file:line` and the fix.
+6. **Recommended actions,** in order: remove, consolidate, add.
 
-```
-/go-tests-scanner
-```
+## Reference: weak vs. strong
 
-Or scan a specific package:
+A weak test passes whenever `ParseOrder` returns anything at all:
 
-```
-/go-tests-scanner ./pkg/orders
-```
-
-The skill will:
-1. Parse all `*_test.go` files in the current directory/package
-2. Analyze test function names, table structure, assertions, mocking patterns
-3. Cross-reference with coverage data (if available via `go test -cover`)
-4. Produce a prioritized list of low-value tests and coverage gaps
-5. Suggest consolidations and additions
-
-## Scoring
-
-- **Signal-to-Noise > 75%** — Healthy test suite, small improvements possible
-- **Signal-to-Noise 50–75%** — Solid core, some noise to clean up
-- **Signal-to-Noise < 50%** — Too many low-value tests, significant consolidation needed
-
-## Common Patterns to Avoid
-
-### ❌ Low-Value: Testing Trivial Getters
-```go
-func TestUser_GetEmail(t *testing.T) {
-    u := &User{Email: "test@example.com"}
-    if u.GetEmail() != "test@example.com" {
-        t.Errorf("got %s, want test@example.com", u.GetEmail())
-    }
-}
-```
-**Delete this.** It tests the language itself, not your logic.
-
-### ❌ Low-Value: Tautological Assertions
 ```go
 func TestParseOrder(t *testing.T) {
     o, err := ParseOrder(validJSON)
     if err != nil {
-        t.Errorf("unexpected error: %v", err)
+        t.Fatalf("unexpected error: %v", err)
     }
     if o == nil {
-        t.Errorf("got nil")
+        t.Fatal("got nil order")
     }
 }
 ```
-**Why?** If `err != nil`, you'd catch it. If `ParseOrder` is well-written, `o` won't be nil when `err` is nil. Test the actual parse logic.
 
-### ✅ Good: Table-Driven with Edge Cases
+A strong one pins the behavior, including *which* error:
+
 ```go
 func TestOrderTotal(t *testing.T) {
     tests := []struct {
-        name      string
-        items     []Item
-        wantTotal int
-        wantErr   bool
+        name    string
+        items   []Item
+        want    int64
+        wantErr error
     }{
-        {"empty order", nil, 0, false},
-        {"single item", []Item{{Price: 10}}, 10, false},
-        {"negative price returns error", []Item{{Price: -5}}, 0, true},
+        {"empty order totals zero", nil, 0, nil},
+        {"single item", []Item{{PriceCents: 1000}}, 1000, nil},
+        {"negative price is rejected", []Item{{PriceCents: -5}}, 0, ErrNegativePrice},
     }
     for _, tt := range tests {
         t.Run(tt.name, func(t *testing.T) {
-            total, err := OrderTotal(tt.items)
-            if (err != nil) != tt.wantErr {
-                t.Errorf("got error %v, wantErr %v", err, tt.wantErr)
+            got, err := OrderTotal(tt.items)
+            if !errors.Is(err, tt.wantErr) {
+                t.Fatalf("error = %v, want %v", err, tt.wantErr)
             }
-            if total != tt.wantTotal {
-                t.Errorf("got %d, want %d", total, tt.wantTotal)
+            if got != tt.want {
+                t.Errorf("total = %d, want %d", got, tt.want)
             }
         })
     }
 }
 ```
-**Why?** Clear cases, edge cases covered, subtest names identify failing case instantly.
 
-## Integration Test Guidance
-
-For database-backed code:
-- Real DB integration tests use `docker-compose`, run in `*_integration_test.go` with `// +build integration` tags (or `_test.go` in a separate suite)
-- Mock only at the business logic layer (e.g., a `Repository` interface with fakes for testing handlers)
-- Never mock `database/sql` or the DB driver; test queries against real schema
-
-## After the Review
-
-The scanner does *not* auto-fix. Use the report to:
-1. **Delete** low-value tests immediately (they slow you down)
-2. **Consolidate** near-duplicate tests into one table-driven test
-3. **Add** tests for identified coverage gaps (especially error branches and edge cases)
-4. **Refactor mocks** to fakes for pure-logic tests, reserve mocks for boundaries only
-
-Re-run the scanner after changes to confirm improvement.
+`errors.Is(nil, nil)` is true, so the same line covers both the success
+rows and the error rows.

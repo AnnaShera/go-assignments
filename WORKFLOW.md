@@ -1,97 +1,94 @@
 # Assignment Workflow
 
-This document describes the complete flow of a Go assignment from start to finish, including which files are read and created at each stage.
-
-## The Complete Assignment Flow
+How an assignment moves from brief to merge, and which files each step
+reads and writes. `CLAUDE.md` and `STANDARDS.md` hold the rules; the
+`/new-go-assignment` skill runs these steps. Every `docs/` path means
+`assignments/<name>/docs/`.
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│ SESSION STARTS                                          │
-│ CLAUDE.md is automatically loaded (TDD rules)           │
-└────────────────────┬────────────────────────────────────┘
-                     │
-                     ▼
-┌─────────────────────────────────────────────────────────┐
-│ /new-go-assignment SKILL LAUNCHED                       │
-│ (Orchestrates 5-phase workflow)                         │
-└────────────────────┬────────────────────────────────────┘
-                     │
-        ┌────────────┴────────────┐
-        │                         │
-        ▼                         ▼
-   ┌─────────────┐          ┌──────────────────┐
-   │ PHASE 1:    │          │ Reads:           │
-   │ INTAKE      │◄─────────┤ STANDARDS.md     │
-   │             │          │ (decision guide) │
-   │ Creates:    │          └──────────────────┘
-   │ docs/       │
-   │ QUESTIONS.md│
-   └────────────┬┘
-                │ (STOP & WAIT FOR APPROVAL)
-                │
-                ▼
-   ┌─────────────────────────┐
-   │ PHASE 2:                │
-   │ STANDARDS REVIEW        │
-   │                         │
-   │ Creates:                │
-   │ docs/DECISIONS.md       │
-   │ (log "we chose X        │
-   │  because of Y")         │
-   └────────────┬────────────┘
-                │ (STOP & WAIT FOR APPROVAL)
-                │
-                ▼
-   ┌─────────────────────────┐
-   │ PHASE 3:                │
-   │ DESIGN                  │
-   │                         │
-   │ Creates:                │
-   │ docs/DESIGN.md          │
-   │ (package layout,        │
-   │  signatures, checklist) │
-   └────────────┬────────────┘
-                │ (STOP & WAIT FOR APPROVAL)
-                │
-                ▼
-   ┌─────────────────────────────────────────┐
-   │ PHASE 4: TDD IMPLEMENTATION             │
-   │                                         │
-   │ Red → Green → Refactor cycles           │
-   │                                         │
-   │ Commit at every Red, Green, Refactor.   │
-   │ Every push gated by the pre-push hook:  │
-   │ • gofmt, go test, golangci-lint         │
-   │                                         │
-   │ STOPS AFTER (practice mode only):       │
-   │ • Test skeleton written (Red)           │
-   │ • First test group passes (Green)       │
-   │ • Each package complete                 │
-   │                                         │
-   │ Creates: Implementation code            │
-   └────────────┬────────────────────────────┘
-                │
-                ▼
-   ┌─────────────────────────┐
-   │ PHASE 5: DEBRIEF        │
-   │                         │
-   │ Creates:                │
-   │ docs/DEBRIEF.md         │
-   │ (tradeoffs, lessons)    │
-   └────────────┬────────────┘
-                │
-                ▼
-        ┌─────────────────────────────────────┐
-        │ SUBMISSION READINESS CHECKS         │
-        │                                     │
-        │ Run in order:                       │
-        │ 1. /code-review       (correctness) │
-        │ 2. /go-tests-scanner  (test signal) │
-        │ 3. integration tests + go test -race│
-        │    (by hand; the gate skips both)   │
-        │ 4. /go-interviewer-review  (score)  │
-        └─────────────────────────────────────┘
+┌───────────────────────────────────────────────┐
+│ SESSION STARTS                                │
+│ CLAUDE.md loads automatically (how we work)   │
+└───────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 0: SETUP                                │
+│ Branch assignment/<name> off main             │
+│ Creates: assignments/<name>/docs/, go.mod     │
+│ Adds: a row to the root README.md table       │
+└───────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 1: INTAKE                               │
+│ Reads: STANDARDS.md Traits + Questions        │
+│ Creates: docs/QUESTIONS.md (brief, answers)   │
+│          docs/DECISIONS.md (traits first)     │
+└───────────────────────────────────────────────┘
+                        │
+                        │  (STOP: wait for go-ahead)
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 2: STANDARDS REVIEW                     │
+│ Applies: every 'always' section, plus each    │
+│          whose 'Applies when:' matches        │
+│ Updates: docs/DECISIONS.md (deviations,       │
+│          layer shape, dependencies)           │
+└───────────────────────────────────────────────┘
+                        │
+                        │  (STOP: wait for go-ahead)
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 3: DESIGN                               │
+│ Creates: docs/DESIGN.md (layout, layer        │
+│          shape, signatures, data flow,        │
+│          build-order checklist)               │
+└───────────────────────────────────────────────┘
+                        │
+                        │  (STOP: wait for go-ahead)
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 4: TDD IMPLEMENTATION                   │
+│ Red -> Green -> Refactor, one unit at a time  │
+│ Commit every phase: (Red) (Green) (Refactor)  │
+│ Push the branch only from green; the hook     │
+│ gates gofmt, go test, golangci-lint           │
+│                                               │
+│ STOPS (practice mode only):                   │
+│ - first test skeleton                         │
+│ - first passing test group                    │
+│ - each package complete                       │
+└───────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│ PHASE 5: DEBRIEF & SUBMISSION CHECK           │
+│ Creates: docs/DEBRIEF.md, assignment README   │
+│ Runs: every applicable command in CLAUDE.md   │
+│       (integration, -race, govulncheck, ...)  │
+│ Then: follow the README from a clean clone    │
+└───────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│ REVIEW, in this order:                        │
+│ 1. /code-review            correctness        │
+│ 2. /go-tests-scanner       test signal        │
+│ 3. /go-interviewer-review  score, verdict     │
+└───────────────────────────────────────────────┘
+                        │
+                        ▼
+┌───────────────────────────────────────────────┐
+│ MERGE assignment/<name> into main             │
+│ The user's call, never automatic              │
+└───────────────────────────────────────────────┘
 ```
 
-Fix correctness first, then test quality, then score, so the interviewer
-review grades the final code rather than code that's about to change.
+Review order matters: fix correctness first, then test quality, then score,
+so the interviewer review grades the final code rather than code that's
+about to change.
+
+**Live mode** skips the practice stops in Phase 4 and defers `DEBRIEF.md`
+until after submission. The assignment README and the submission check
+still happen, because a reviewer who can't run the code stops there.
