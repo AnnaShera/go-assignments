@@ -50,7 +50,8 @@ Check each build-order step whose trait applies:
   at once.
 - **Repository** (Database): happy path, not found, unique violation, FK
   violation, and pagination order.
-- **Wiring:** one smoke test against the real database.
+- **Wiring** (HTTP): one smoke test that serves the real handler over the
+  real database and hits `/healthz` plus one real endpoint.
 
 Also flag:
 - error branches with no test

@@ -108,8 +108,9 @@ rules in `CLAUDE.md`, and the choices recorded in the assignment's
 - Tests are table-driven, go through the router, use hand-written fakes,
   and hit the real database in integration tests. They're deterministic:
   no `time.Sleep`, no real clock, and `-shuffle=on` passes.
-- The git log shows TDD: `(Red)`, `(Green)`, and `(Refactor)` commits in
-  that order for each unit.
+- The git log shows TDD: for each unit, a `(Red)` commit before its
+  `(Green)` commit, and a `(Refactor)` after it where there was something
+  to refactor.
 - For a deep test-suite pass, recommend `/go-tests-scanner` rather than
   repeating it here.
 

@@ -58,7 +58,7 @@ All `docs/` paths below mean `assignments/<name>/docs/`.
    asking. In live mode, if the interviewer can't be reached, record your
    assumption and mark it **ASSUMED**.
 4. Update `docs/QUESTIONS.md` with the answers. Commit:
-   `Intake: traits and questions for <name>`.
+   `Record traits and intake answers for <name>`.
 5. **Stop.** Summarize in 2–3 sentences: the traits, and anything the
    answers changed about scope. Wait for the go-ahead.
 
@@ -75,7 +75,7 @@ All `docs/` paths below mean `assignments/<name>/docs/`.
    (Authentication & Authorization, HTTP only).
 4. Keep it short. Defaults don't need restating, just a line naming the
    sections applied. In live mode, one line per decision.
-5. Commit: `Standards review for <name>`.
+5. Commit: `Record standards decisions for <name>`.
 6. **Stop.** List the sections applied and any deviations. Wait for the
    go-ahead.
 
@@ -90,7 +90,7 @@ All `docs/` paths below mean `assignments/<name>/docs/`.
    - Data flow: one line per request, command, or message path.
    - An implementation checklist in the **build order** from `CLAUDE.md`,
      including only the steps whose trait applies.
-2. Commit: `Design for <name>`.
+2. Commit: `Add design for <name>`.
 3. **Stop.** Walk through the design in a few sentences. No test or
    implementation code before the go-ahead.
 
@@ -143,9 +143,10 @@ still committing every phase.
      `go mod tidy -diff`. Run `-race` wherever the Tooling & Quality
      Gates section says it can run, and tell the user plainly if it
      wasn't run.
-   - Clone the repo into an empty folder in the scratchpad, check out the
-     branch, and follow the assignment README exactly, as the reviewer
-     will. Fix whatever breaks.
+   - Clone the local repo into an empty scratchpad folder
+     (`git clone <repo root> <folder>`, which needs no push), check out
+     `assignment/<name>`, and follow the assignment README exactly, as the
+     reviewer will. Fix whatever breaks.
 4. Update the assignment's status in the repo-root README table. Commit.
 5. Suggest the review order from `WORKFLOW.md`: `/code-review`, then
    `/go-tests-scanner`, then `/go-interviewer-review`.
