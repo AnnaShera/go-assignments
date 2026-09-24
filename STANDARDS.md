@@ -1,6 +1,6 @@
 # Engineering Standards & Decision Reference (Go)
 
-**Version 1.1** (2026-09-24). v1.0 is in git history.
+**Version 1.2** (2026-09-24). Earlier versions are in git history.
 
 This file holds the technical decisions that come up in every assignment,
 with their trade-offs and one **default** each. `CLAUDE.md` covers *how we
@@ -833,7 +833,11 @@ brief asks for nested subcommands.
       ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
       err := run(ctx, os.Args[1:], os.Getenv, os.Stdin, os.Stdout, os.Stderr)
       stop()
-      os.Exit(exitCode(err))
+      code := exitCode(err)
+      if code == 1 {
+          fmt.Fprintln(os.Stderr, err)
+      }
+      os.Exit(code)
   }
 
   func exitCode(err error) int {
@@ -843,7 +847,6 @@ brief asks for nested subcommands.
       case errors.Is(err, errUsage):
           return 2
       default:
-          fmt.Fprintln(os.Stderr, err)
           return 1
       }
   }
@@ -854,7 +857,8 @@ brief asks for nested subcommands.
   that `run` receives, and `errcheck` flags an unchecked
   `fmt.Fprintln(stdout, ...)`, even when the writer is a `*bufio.Writer`.
   Return the error: `if _, err := fmt.Fprintln(stdout, line); err != nil { return fmt.Errorf("write output: %w", err) }`.
-  Only `fmt.Fprint*` to `os.Stderr`, as in `main` above, is exempt.
+  `errcheck` exempts only writes to `os.Stderr` (as in `main` above), a
+  `*bytes.Buffer`, or a `*strings.Builder`.
 - Read input from an `io.Reader` (a file argument, or stdin when none is
   given), so tests pass a `strings.Reader`.
 - Tests call `run` with `bytes.Buffer` for stdout and stderr and assert on

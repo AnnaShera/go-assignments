@@ -1,6 +1,6 @@
 # Home Assignment Instructions (Go, TDD)
 
-**Version 1.3** (2026-09-24). Earlier versions are in git history.
+**Version 1.4** (2026-09-24). Earlier versions are in git history.
 
 This file is *how we work*. `STANDARDS.md` is *what we build with*: read it
 before designing anything, and use its defaults unless the assignment gives a
