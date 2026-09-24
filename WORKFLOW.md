@@ -59,7 +59,7 @@ This document describes the complete flow of a Go assignment from start to finis
    │                                         │
    │ Red → Green → Refactor cycles           │
    │                                         │
-   │ Commit after every Green and Refactor.  │
+   │ Commit at every Red, Green, Refactor.   │
    │ Every push gated by the pre-push hook:  │
    │ • gofmt, go test, golangci-lint         │
    │                                         │
