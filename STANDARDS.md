@@ -143,7 +143,7 @@ assignments/<name>/
 ├── Dockerfile             HTTP or Database
 ├── compose.yaml           HTTP, Database, or any external service
 ├── .env.example           every config variable with a dummy value, if there is config
-└── go.mod                 module github.com/AnnaShera/go-assignments/assignments/<name>
+└── go.mod                 module github.com/<github-user>/go-assignments/assignments/<name>
 ```
 
 - **Library or algorithm assignment with no binary:** put the package in

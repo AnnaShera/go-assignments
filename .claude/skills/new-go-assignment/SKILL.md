@@ -30,9 +30,10 @@ All `docs/` paths below mean `assignments/<name>/docs/`.
    - Branch off an up-to-date `main`: `assignment/<name>`. Never work on
      `main`.
    - Create `assignments/<name>/docs/`.
-   - From `assignments/<name>/`, run
-     `go mod init github.com/AnnaShera/go-assignments/assignments/<name>`,
-     and make sure the `go` directive matches the README prerequisites.
+   - Get the GitHub account from the `origin` remote
+     (`git remote get-url origin`). From `assignments/<name>/`, run
+     `go mod init github.com/<github-user>/go-assignments/assignments/<name>`
+     with that account in place of `<github-user>`, and make sure the `go` directive matches the README prerequisites.
    - Add a row to the Assignments table in the repo-root `README.md`,
      with status "In progress".
    - Commit: `Scaffold <name> assignment`.
