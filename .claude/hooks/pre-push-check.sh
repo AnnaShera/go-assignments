@@ -1,72 +1,63 @@
 #!/bin/bash
-input=$(cat)
-command=$(echo "$input" | grep -o '"command" *: *"[^"]*"' | head -1 | sed -E 's/.*"command" *: *"//; s/"$//')
+# Pre-push quality gate. Keep in sync with Tooling & Quality Gates in STANDARDS.md.
+# Exit 0 allows the Bash call; exit 2 blocks it and shows stderr to Claude.
 
-case "$command" in
-  *"git push"*) ;;
-  *) exit 0 ;;
+block() {
+  echo "Push blocked: $*" >&2
+  exit 2
+}
+
+input=$(cat)
+
+# Match `push` only as git's subcommand, anywhere in the payload: after
+# global options (`git -C dir push`, `git --no-pager push`), after a chain
+# (`&&`, `;`), or on a new line (a JSON-escaped `\n`). A commit message or
+# description that merely mentions "push" must not match: at a Red step the
+# tests fail on purpose, so a match would block the commit.
+push_re='(^|[^[:alnum:]_-]|[\][nt])git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--?[[:alnum:]-]+(=[^[:space:]]+)?))*[[:space:]]+push\b'
+grep -Eq "$push_re" <<<"$input" || exit 0
+
+[ -n "$CLAUDE_PROJECT_DIR" ] || block "CLAUDE_PROJECT_DIR is not set."
+cd "$CLAUDE_PROJECT_DIR" || block "cannot cd to $CLAUDE_PROJECT_DIR."
+
+# PATH first, then where `go install` puts it.
+lint=$(command -v golangci-lint)
+if [ -z "$lint" ]; then
+  gobin="$(go env GOPATH)/bin"
+  for candidate in "$gobin/golangci-lint" "$gobin/golangci-lint.exe"; do
+    if [ -x "$candidate" ]; then
+      lint=$candidate
+      break
+    fi
+  done
+fi
+[ -n "$lint" ] ||
+  block "golangci-lint not found on PATH or in $(go env GOPATH)/bin. Install v2."
+case "$("$lint" version --short 2>/dev/null)" in
+  2.*) ;;
+  *) block "golangci-lint v2 required, found: $("$lint" version --short 2>&1)." ;;
 esac
 
-if [ -z "$CLAUDE_PROJECT_DIR" ]; then
-  exit 0
-fi
+unformatted=$(gofmt -l .) || block "gofmt failed."
+[ -z "$unformatted" ] || block "not gofmt-aligned (fix with: gofmt -w .):
+$unformatted"
 
-cd "$CLAUDE_PROJECT_DIR" || exit 0
-
-unformatted=$(gofmt -l .)
-gofmt_status=$?
-
-if [ $gofmt_status -ne 0 ]; then
-  echo "Push blocked, gofmt failed:" >&2
-  exit 2
-fi
-
-if [ -n "$unformatted" ]; then
-  echo "Push blocked, not gofmt-aligned:" >&2
-  echo "$unformatted" >&2
-  echo "Fix with: gofmt -w ." >&2
-  exit 2
-fi
-
-lint_bin="$(go env GOPATH)/bin/golangci-lint.exe"
-
-if [ ! -x "$lint_bin" ]; then
-  echo "Push blocked, golangci-lint not found at $lint_bin:" >&2
-  exit 2
-fi
-
-# Each assignment is its own Go module (assignments/*/go.mod), so there is
-# no single root module for `go test ./...` / lint to run against. Run each
-# check per-module instead.
-while IFS= read -r modfile; do
+# Each assignment is its own module; there is no root go.mod.
+shopt -s nullglob
+for modfile in assignments/*/go.mod; do
   moddir=$(dirname "$modfile")
 
-  test_output=$(cd "$moddir" && go test ./... 2>&1)
-  test_status=$?
+  out=$(cd "$moddir" && go test ./... 2>&1) ||
+    block "go test failed in $moddir:
+$out"
 
-  if [ $test_status -ne 0 ]; then
-    echo "Push blocked, go test failed in $moddir:" >&2
-    echo "$test_output" >&2
-    exit 2
-  fi
+  out=$(cd "$moddir" && "$lint" run ./... 2>&1) ||
+    block "golangci-lint failed in $moddir:
+$out"
 
-  lint_output=$(cd "$moddir" && "$lint_bin" run ./... 2>&1)
-  lint_status=$?
-
-  if [ $lint_status -ne 0 ]; then
-    echo "Push blocked, golangci-lint failed in $moddir:" >&2
-    echo "$lint_output" >&2
-    exit 2
-  fi
-
-  lint_integration_output=$(cd "$moddir" && "$lint_bin" run --build-tags=integration ./... 2>&1)
-  lint_integration_status=$?
-
-  if [ $lint_integration_status -ne 0 ]; then
-    echo "Push blocked, golangci-lint failed in $moddir (-tags=integration):" >&2
-    echo "$lint_integration_output" >&2
-    exit 2
-  fi
-done < <(find . -maxdepth 3 -name go.mod)
+  out=$(cd "$moddir" && "$lint" run --build-tags=integration ./... 2>&1) ||
+    block "golangci-lint failed in $moddir (--build-tags=integration):
+$out"
+done
 
 exit 0
