@@ -43,7 +43,9 @@ These hold in every phase, in practice and live mode alike.
 - Every assignment lives in its own folder, `assignments/<name>/`, and is
   its own Go module. There is no root `go.mod`, so run Go commands from
   inside the assignment folder.
-- Module path: `github.com/AnnaShera/go-assignments/assignments/<name>`.
+- Module path: `github.com/<github-user>/go-assignments/assignments/<name>`,
+  where `<github-user>` is the account in the `origin` remote URL
+  (`git remote get-url origin`).
 - Layout inside an assignment follows Project Layout in `STANDARDS.md`,
   including the assignment's own `README.md` (see Delivery).
 - Workflow docs go in `assignments/<name>/docs/`, never in the repo root.
